@@ -1,0 +1,7 @@
+{
+  "faithfulness": 0.4444,
+  "answer_relevancy": 0.8148,
+  "model": "llama-3.3-70b-versatile",
+  "mode": "baseline_no_rag",
+  "total_questions": 25
+}
