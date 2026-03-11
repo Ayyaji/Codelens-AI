@@ -1,0 +1,202 @@
+[
+  {
+    "id": 1,
+    "question": "Why am I getting NameError: name 'total' is not defined in Python?",
+    "code_snippet": "def calculate():\n    result = total + 10\n    return result\ncalculate()",
+    "expected_answer": "The variable 'total' is used inside the function but was never defined or passed as a parameter. Either define it before use (e.g., total = 0) or pass it as an argument to the function.",
+    "category": "NameError",
+    "in_kb": true
+  },
+  {
+    "id": 2,
+    "question": "I get NameError: name 'np' is not defined. What went wrong?",
+    "code_snippet": "array = np.array([1, 2, 3])\nprint(array)",
+    "expected_answer": "You are using 'np' without importing NumPy first. Add 'import numpy as np' at the top of your file before using any NumPy functions.",
+    "category": "NameError",
+    "in_kb": true
+  },
+  {
+    "id": 3,
+    "question": "NameError: name 'true' is not defined — but I wrote true in my condition.",
+    "code_snippet": "flag = true\nif flag:\n    print('yes')",
+    "expected_answer": "Python is case-sensitive. The boolean literal must be capitalized: use 'True' not 'true'. Same applies to 'False' and 'None'.",
+    "category": "NameError",
+    "in_kb": true
+  },
+  {
+    "id": 4,
+    "question": "Why does Python say NameError: name 'counter' is not defined inside my loop?",
+    "code_snippet": "for i in range(5):\n    counter += 1\nprint(counter)",
+    "expected_answer": "The variable 'counter' is referenced before being assigned. You must initialize it before the loop: counter = 0, then counter += 1 inside the loop will work correctly.",
+    "category": "NameError",
+    "in_kb": true
+  },
+  {
+    "id": 5,
+    "question": "IndexError: list index out of range — why does this crash on the last element?",
+    "code_snippet": "my_list = [10, 20, 30]\nfor i in range(4):\n    print(my_list[i])",
+    "expected_answer": "The list has 3 elements (indices 0, 1, 2) but the loop goes from 0 to 3 inclusive. Change range(4) to range(len(my_list)) or range(3) to stay within bounds.",
+    "category": "IndexError",
+    "in_kb": true
+  },
+  {
+    "id": 6,
+    "question": "I get IndexError when accessing my_list[-4] on a 3-element list. Why?",
+    "code_snippet": "my_list = ['a', 'b', 'c']\nprint(my_list[-4])",
+    "expected_answer": "Negative indexing counts from the end. For a list of length 3, valid negative indices are -1, -2, and -3. Index -4 is out of range because it would point before the first element.",
+    "category": "IndexError",
+    "in_kb": true
+  },
+  {
+    "id": 7,
+    "question": "Why does IndexError occur when I try to access an element from an empty list?",
+    "code_snippet": "results = []\nprint(results[0])",
+    "expected_answer": "An empty list has no elements, so any index access will raise an IndexError. Check if the list is non-empty first using 'if results:' before accessing elements.",
+    "category": "IndexError",
+    "in_kb": true
+  },
+  {
+    "id": 8,
+    "question": "IndexError: string index out of range — I'm trying to get the last character.",
+    "code_snippet": "name = 'John'\nprint(name[4])",
+    "expected_answer": "Strings are zero-indexed. 'John' has 4 characters at indices 0–3. Index 4 is out of range. Use name[-1] or name[len(name)-1] to access the last character.",
+    "category": "IndexError",
+    "in_kb": true
+  },
+  {
+    "id": 9,
+    "question": "IndentationError: unexpected indent — my code looks fine but Python complains.",
+    "code_snippet": "x = 5\n    print(x)",
+    "expected_answer": "The print statement is indented but it is not inside any block (function, loop, or conditional). Remove the leading spaces so 'print(x)' is at the same indentation level as 'x = 5'.",
+    "category": "IndentationError",
+    "in_kb": true
+  },
+  {
+    "id": 10,
+    "question": "Why do I get IndentationError: expected an indented block after my if statement?",
+    "code_snippet": "if x > 0:\nprint('positive')",
+    "expected_answer": "The body of an if statement must be indented. Add 4 spaces (or 1 tab) before 'print(positive)' to make it part of the if block.",
+    "category": "IndentationError",
+    "in_kb": true
+  },
+  {
+    "id": 11,
+    "question": "IndentationError: unindent does not match any outer indentation level — mixing tabs and spaces?",
+    "code_snippet": "def greet():\n\tprint('hello')\n    print('world')",
+    "expected_answer": "You are mixing tabs and spaces for indentation, which Python 3 does not allow. Pick one style (spaces are recommended) and apply it consistently throughout the file. Use your editor's 'convert tabs to spaces' option.",
+    "category": "IndentationError",
+    "in_kb": true
+  },
+  {
+    "id": 12,
+    "question": "I get IndentationError inside a for loop even though I indented the body.",
+    "code_snippet": "for i in range(3):\nprint(i)",
+    "expected_answer": "The body of a for loop must be indented relative to the for line. Add 4 spaces before 'print(i)' so Python treats it as part of the loop body.",
+    "category": "IndentationError",
+    "in_kb": true
+  },
+  {
+    "id": 13,
+    "question": "TypeError: unsupported operand type(s) for +: 'int' and 'str' — what does this mean?",
+    "code_snippet": "age = input('Enter age: ')\nresult = age + 5\nprint(result)",
+    "expected_answer": "input() always returns a string. You cannot add an integer directly to a string. Convert the input to an integer first: age = int(input('Enter age: ')), then age + 5 will work.",
+    "category": "TypeError",
+    "in_kb": true
+  },
+  {
+    "id": 14,
+    "question": "TypeError: 'NoneType' object is not subscriptable — why is my function returning None?",
+    "code_snippet": "def get_data():\n    data = [1, 2, 3]\n\nresult = get_data()\nprint(result[0])",
+    "expected_answer": "The function 'get_data' does not have a return statement, so it implicitly returns None. Add 'return data' before the function ends so the list is passed back to the caller.",
+    "category": "TypeError",
+    "in_kb": true
+  },
+  {
+    "id": 15,
+    "question": "TypeError: takes 1 positional argument but 2 were given — happens when I call my class method.",
+    "code_snippet": "class Dog:\n    def bark(name):\n        print(name + ' says woof')\n\nd = Dog()\nd.bark('Rex')",
+    "expected_answer": "Instance methods must have 'self' as their first parameter. When you call d.bark('Rex'), Python automatically passes the instance as the first argument. Fix it: def bark(self, name).",
+    "category": "TypeError",
+    "in_kb": true
+  },
+  {
+    "id": 16,
+    "question": "TypeError: object of type 'int' has no len() — why can't I get the length of a number?",
+    "code_snippet": "num = 12345\nprint(len(num))",
+    "expected_answer": "len() only works on sequences and collections (strings, lists, tuples, dicts). Integers have no length. If you want the number of digits, convert to string first: len(str(num)).",
+    "category": "TypeError",
+    "in_kb": true
+  },
+  {
+    "id": 17,
+    "question": "SyntaxError: invalid syntax on my print statement — I'm using Python 3.",
+    "code_snippet": "print 'Hello World'",
+    "expected_answer": "In Python 3, print is a function and requires parentheses. Use print('Hello World') instead. The syntax without parentheses was valid in Python 2 only.",
+    "category": "SyntaxError",
+    "in_kb": true
+  },
+  {
+    "id": 18,
+    "question": "SyntaxError: EOL while scanning string literal — what does EOL mean?",
+    "code_snippet": "message = 'Hello World\nprint(message)",
+    "expected_answer": "EOL means End Of Line. The string was opened with a single quote but never closed on the same line. Add the closing quote: message = 'Hello World'.",
+    "category": "SyntaxError",
+    "in_kb": true
+  },
+  {
+    "id": 19,
+    "question": "SyntaxError: invalid syntax pointing at my else clause — but my if looks fine.",
+    "code_snippet": "if x > 0:\n    print('positive')\nelse\n    print('non-positive')",
+    "expected_answer": "The else clause is missing a colon at the end. Python requires a colon after else, elif, for, while, def, and class. Fix it: else:",
+    "category": "SyntaxError",
+    "in_kb": true
+  },
+  {
+    "id": 20,
+    "question": "SyntaxError: cannot assign to literal — what am I doing wrong?",
+    "code_snippet": "5 = x\nprint(x)",
+    "expected_answer": "You have the assignment backwards. In Python, the variable name goes on the left and the value on the right: x = 5. You cannot assign a value to a literal number.",
+    "category": "SyntaxError",
+    "in_kb": true
+  },
+  {
+    "id": 21,
+    "question": "How do I use Python's asyncio to run multiple coroutines concurrently with asyncio.gather()?",
+    "code_snippet": "import asyncio\n\nasync def task1():\n    await asyncio.sleep(1)\n    return 'done1'\n\nresult = asyncio.gather(task1(), task1())",
+    "expected_answer": "asyncio.gather() must be awaited inside an async context. Use asyncio.run(main()) where main() is an async function that does: results = await asyncio.gather(task1(), task1()). Without await, gather() returns a coroutine object, not the results.",
+    "category": "ConceptualError",
+    "in_kb": false
+  },
+  {
+    "id": 22,
+    "question": "What is the difference between deepcopy and shallow copy in Python and when should I use each?",
+    "code_snippet": "import copy\noriginal = [[1, 2], [3, 4]]\nshallow = copy.copy(original)\ndeep = copy.deepcopy(original)",
+    "expected_answer": "A shallow copy creates a new outer object but still references the same inner objects. A deep copy recursively copies all nested objects. Use shallow copy for flat structures; use deepcopy when you have nested mutable objects (like lists of lists) and need full independence between original and copy.",
+    "category": "ConceptualError",
+    "in_kb": false
+  },
+  {
+    "id": 23,
+    "question": "Why does my Python multithreading code not run faster even with multiple threads?",
+    "code_snippet": "import threading\n\ndef cpu_task():\n    total = sum(range(10**7))\n\nthreads = [threading.Thread(target=cpu_task) for _ in range(4)]\nfor t in threads: t.start()\nfor t in threads: t.join()",
+    "expected_answer": "Python's Global Interpreter Lock (GIL) prevents true parallel execution of CPU-bound threads. For CPU-bound tasks, use multiprocessing instead of threading. Threading in Python is best suited for I/O-bound tasks like file reads or network calls.",
+    "category": "ConceptualError",
+    "in_kb": false
+  },
+  {
+    "id": 24,
+    "question": "How do decorators work internally in Python? Can I write my own?",
+    "code_snippet": "@my_decorator\ndef greet():\n    print('hello')",
+    "expected_answer": "A decorator is a function that takes another function as input, wraps it with additional behavior, and returns the wrapped function. Writing @my_decorator above a function is equivalent to greet = my_decorator(greet). You can write your own by defining a function that accepts a function, defines an inner wrapper function, and returns the wrapper.",
+    "category": "ConceptualError",
+    "in_kb": false
+  },
+  {
+    "id": 25,
+    "question": "What causes a RecursionError: maximum recursion depth exceeded and how do I fix it?",
+    "code_snippet": "def factorial(n):\n    return n * factorial(n - 1)\n\nprint(factorial(10))",
+    "expected_answer": "The function calls itself indefinitely because there is no base case to stop the recursion. Add a base case: if n == 0 or n == 1: return 1. Without it, the call stack grows until Python raises RecursionError at its default limit of ~1000 calls.",
+    "category": "ConceptualError",
+    "in_kb": false
+  }
+]
