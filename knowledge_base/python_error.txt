@@ -1,0 +1,29 @@
+NameError: name is not defined
+This error occurs when you try to use a variable or function that has not been defined yet.
+Example: print(x) before x = 10
+Fix: Define the variable before using it.
+
+IndexError: list index out of range
+This error occurs when you try to access an index that does not exist in a list.
+Example: my_list = [1,2,3] then my_list[5]
+Fix: Check the length of the list before accessing an index.
+
+IndentationError: unexpected indent
+This error occurs when your code indentation is incorrect.
+Example: mixing tabs and spaces
+Fix: Use consistent indentation — 4 spaces recommended.
+
+TypeError: unsupported operand type
+This error occurs when you perform an operation on incompatible data types.
+Example: "hello" + 5
+Fix: Convert types before operating. Use str(5) or int("5").
+
+SyntaxError: invalid syntax
+This error occurs when Python cannot parse your code.
+Example: missing colon after if statement
+Fix: Check for missing colons, brackets, or quotes.
+
+AttributeError: object has no attribute
+This error occurs when you access an attribute that does not exist on an object.
+Example: my_list.push(1) instead of my_list.append(1)
+Fix: Check the correct method name for the object type.
