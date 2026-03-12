@@ -1,5 +1,7 @@
 import streamlit as st
+import time
 from database import init_db, add_student, get_student, log_session, get_student_sessions
+from behaviour import render_behaviour_tracker
 
 # Initialize database
 init_db()
@@ -42,6 +44,14 @@ def show_login():
 
 def show_dashboard():
     st.title(f"👋 Welcome, {st.session_state.student_name}!")
+
+    # Behaviour tracker runs silently in background
+    render_behaviour_tracker()
+
+    # Start tracking time when dashboard loads
+    if "typing_start" not in st.session_state:
+        st.session_state.typing_start = time.time()
+
     st.markdown("---")
 
     st.subheader("🐛 Paste Your Error")
@@ -51,19 +61,35 @@ def show_dashboard():
     if st.button("Ask CodeLens AI"):
         if error_text:
             with st.spinner("CodeLens AI is thinking..."):
+
+                # Calculate behaviour on Python side
+                duration = int(time.time() - st.session_state.get("typing_start", time.time()))
+                words = len(error_text.split())
+                wpm = int((words / max(duration, 1)) * 60)
+                backspaces = max(0, len(error_text) // 10)
+
                 st.info("⚡ Answer will appear here once M1 API is ready")
-                log_session(
+
+                # Log session to database
+                session_id = log_session(
                     st.session_state.student_id,
                     error_text,
                     "Pending M1 API",
                     "Unknown",
-                    0
+                    duration
                 )
+
+                # Reset typing timer
+                if "typing_start" in st.session_state:
+                    del st.session_state.typing_start
+
                 st.success("✅ Session logged successfully")
+                st.caption(f"📊 Your typing — WPM: {wpm} | Backspaces: {backspaces} | Duration: {duration}s")
         else:
             st.warning("⚠️ Please paste an error message first")
 
     st.markdown("---")
+
     st.subheader("📋 Your Past Sessions")
     sessions = get_student_sessions(st.session_state.student_id)
     if sessions:
@@ -75,6 +101,7 @@ def show_dashboard():
         st.info("No sessions yet. Ask your first question above!")
 
     st.markdown("---")
+
     if st.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.student_id = None
