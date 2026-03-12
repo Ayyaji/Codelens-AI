@@ -1,9 +1,14 @@
 import sqlite3
+import os
 from datetime import datetime
+
 def get_connection():
-    conn = sqlite3.connect("codelens.db")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "codelens.db")
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
+
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
@@ -40,8 +45,29 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS teachers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            name TEXT NOT NULL,
+            subject TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS kb_pending (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT NOT NULL,
+            source TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            status TEXT DEFAULT 'pending'
+        )
+    """)
+
     conn.commit()
     conn.close()
+
 def add_student(username, password, name):
     conn = get_connection()
     cursor = conn.cursor()
@@ -70,7 +96,7 @@ def log_session(student_id, error_text, answer, agent_used, duration_seconds):
         INSERT INTO sessions 
         (student_id, error_text, answer, agent_used, timestamp, duration_seconds)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (student_id, error_text, answer, agent_used, 
+    """, (student_id, error_text, answer, agent_used,
           datetime.now().strftime("%Y-%m-%d %H:%M:%S"), duration_seconds))
     session_id = cursor.lastrowid
     conn.commit()
@@ -99,21 +125,74 @@ def get_student_sessions(student_id):
     sessions = cursor.fetchall()
     conn.close()
     return sessions
-if __name__ == "__main__":
-    init_db()
-    print("✅ Database created successfully")
 
-    add_student("arjun", "1234", "Arjun K")
-    print("✅ Student added")
+def add_teacher(username, password, name, subject):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO teachers (username, password, name, subject)
+        VALUES (?, ?, ?, ?)
+    """, (username, password, name, subject))
+    conn.commit()
+    conn.close()
 
-    student = get_student("arjun", "1234")
-    print("✅ Login test:", student["name"])
+def get_teacher(username, password):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM teachers 
+        WHERE username = ? AND password = ?
+    """, (username, password))
+    teacher = cursor.fetchone()
+    conn.close()
+    return teacher
 
-    session_id = log_session(1, "NameError: x not defined", "You forgot to declare x", "Debug Agent", 12)
-    print("✅ Session logged, ID:", session_id)
+def get_all_sessions():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT s.id, st.name as student_name, s.error_text, 
+               s.answer, s.agent_used, s.timestamp, 
+               s.duration_seconds
+        FROM sessions s
+        JOIN students st ON s.student_id = st.id
+        ORDER BY s.timestamp DESC
+    """)
+    sessions = cursor.fetchall()
+    conn.close()
+    return sessions
 
-    log_behaviour(1, session_id, 45.5, 3, 12)
-    print("✅ Behaviour logged")
+def get_pending_kb():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM kb_pending 
+        WHERE status = 'pending'
+        ORDER BY timestamp DESC
+    """)
+    items = cursor.fetchall()
+    conn.close()
+    return items
 
-    sessions = get_student_sessions(1)
-    print("✅ Sessions found:", len(sessions))
+def update_kb_status(kb_id, status):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE kb_pending SET status = ? WHERE id = ?
+    """, (status, kb_id))
+    conn.commit()
+    conn.close()
+
+def get_all_behaviour():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.id, st.name as student_name, b.avg_wpm, 
+               b.backspace_count, b.duration, b.session_id
+        FROM behaviour b
+        JOIN students st ON b.student_id = st.id
+        ORDER BY b.id DESC
+    """)
+    data = cursor.fetchall()
+    conn.close()
+    return data
