@@ -1,6 +1,7 @@
 from langchain_ollama import OllamaLLM
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma # type: ignore
+from ddgs import DDGS
 
 # Load shared resources
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -65,18 +66,54 @@ Hint (one or two sentences only):"""
     
     return llm.invoke(prompt)
 
-def web_agent(query: str) -> str:
-    prompt = f"""You are CodeLens AI assistant.
-The student asked something outside the Python knowledge base.
-Answer helpfully but briefly. If it's completely off-topic, 
-politely redirect them back to programming topics.
+def web_agent(query: str) -> dict:
+    """
+    Searches the web for answers outside KB.
+    Returns answer + source URL + raw content for KB staging.
+    """
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=3))
+        
+        if not results:
+            return {
+                "answer": "I could not find relevant information online.",
+                "source": None,
+                "raw_content": None
+            }
+        
+        # Build context from search results
+        context = ""
+        source_url = results[0]["href"]
+        for r in results:
+            context += f"{r['title']}: {r['body']}\n"
+        
+        # LLM summarises search results
+        prompt = f"""You are CodeLens AI assistant for engineering students.
+Based on the following web search results, answer the student's question clearly.
 
-Student Query: {query}
+Search Results:
+{context}
 
-Response:"""
+Student Question: {query}
+
+Answer:"""
+        
+        llm = OllamaLLM(model="llama3.2")
+        answer = llm.invoke(prompt)
+        
+        return {
+            "answer": answer,
+            "source": source_url,
+            "raw_content": context
+        }
     
-    return llm.invoke(prompt)
-
+    except Exception as e:
+        return {
+            "answer": f"Web search failed: {str(e)}",
+            "source": None,
+            "raw_content": None
+        }
 
 # Test all agents
 if __name__ == "__main__":

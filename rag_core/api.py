@@ -21,9 +21,14 @@ def root():
 @app.post("/ask", response_model=QueryResponse)
 def ask(request: QueryRequest):
     result = run_pipeline(request.query)
+    
+    answer = result["answer"]
+    if isinstance(answer, dict):
+        answer = answer.get("answer", "No answer found")
+    
     return QueryResponse(
         student_id=request.student_id,
         query=result["query"],
         agent_used=result["agent_used"],
-        answer=result["answer"]
+        answer=answer
     )
