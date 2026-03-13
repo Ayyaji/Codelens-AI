@@ -1,5 +1,5 @@
-from router import route_query
-from agents import debug_agent, concept_agent, hint_agent, web_agent
+from rag_core.router import route_query
+from rag_core.agents import debug_agent, concept_agent, hint_agent, web_agent
 
 def run_pipeline(query: str) -> dict:
     # Step 1: Route
