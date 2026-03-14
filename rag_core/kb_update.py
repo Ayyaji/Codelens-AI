@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+from langchain_core.documents import Document
 
 DB_PATH = "./codelens.db"
 
@@ -62,7 +63,7 @@ def approve_item(item_id: int):
     # Add to ChromaDB
     from langchain_huggingface import HuggingFaceEmbeddings
     from langchain_chroma import Chroma
-    from langchain.schema import Document
+    from langchain_core.documents import Document
     
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     vectorstore = Chroma(
