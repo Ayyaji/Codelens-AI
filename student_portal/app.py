@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import requests
 from database import init_db, add_student, get_student, log_session, get_student_sessions
 from behaviour import render_behaviour_tracker
 
@@ -68,14 +69,47 @@ def show_dashboard():
                 wpm = int((words / max(duration, 1)) * 60)
                 backspaces = max(0, len(error_text) // 10)
 
-                st.info("⚡ Answer will appear here once M1 API is ready")
+                # Call M1's API
+                try:
+                    response = requests.post(
+                        "http://localhost:8000/ask",
+                        json={
+                            "student_id": str(st.session_state.student_id),
+                            "query": error_text
+                        },
+                        timeout=30
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        answer = data["answer"]
+                        agent_used = data["agent_used"]
+
+                        # Show answer
+                        st.chat_message("assistant").write(answer)
+                        st.badge(f"⚡ Answered by: {agent_used}")
+
+                    else:
+                        answer = "API returned an error"
+                        agent_used = "Unknown"
+                        st.error(f"❌ API error: {response.status_code}")
+
+                except requests.exceptions.ConnectionError:
+                    answer = "M1 API not reachable"
+                    agent_used = "Unknown"
+                    st.warning("⚠️ M1 API is not running. Start it with: uvicorn rag_core.api:app --reload")
+
+                except Exception as e:
+                    answer = "Unexpected error"
+                    agent_used = "Unknown"
+                    st.error(f"❌ Error: {str(e)}")
 
                 # Log session to database
                 session_id = log_session(
                     st.session_state.student_id,
                     error_text,
-                    "Pending M1 API",
-                    "Unknown",
+                    answer,
+                    agent_used,
                     duration
                 )
 
@@ -85,6 +119,7 @@ def show_dashboard():
 
                 st.success("✅ Session logged successfully")
                 st.caption(f"📊 Your typing — WPM: {wpm} | Backspaces: {backspaces} | Duration: {duration}s")
+
         else:
             st.warning("⚠️ Please paste an error message first")
 
