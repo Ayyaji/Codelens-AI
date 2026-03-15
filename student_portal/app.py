@@ -77,7 +77,7 @@ def show_dashboard():
                             "student_id": str(st.session_state.student_id),
                             "query": error_text
                         },
-                        timeout=30
+                        timeout=120
                     )
 
                     if response.status_code == 200:
