@@ -1,0 +1,13 @@
+{
+  "faithfulness": 0.4729,
+  "answer_relevancy": 0.8298,
+  "mode": "rag_multi_agent",
+  "total_questions": 25,
+  "routing_accuracy_percent": 80.0,
+  "routing_correct": 20,
+  "routing_total": 25,
+  "agent_distribution": {
+    "debug": 16,
+    "concept": 9
+  }
+}
