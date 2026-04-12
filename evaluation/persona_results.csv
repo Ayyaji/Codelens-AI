@@ -1,0 +1,126 @@
+student_id,student_name,question,persona_response,weak_areas,faithfulness,answer_relevancy
+S001,Student A,Why am I getting NameError: name 'total' is not defined in Python?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,I get NameError: name 'np' is not defined. What went wrong?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,NameError: name 'true' is not defined — but I wrote true in my condition.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,Why does Python say NameError: name 'counter' is not defined inside my loop?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,IndexError: list index out of range — why does this crash on the last element?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,I get IndexError when accessing my_list[-4] on a 3-element list. Why?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,Why does IndexError occur when I try to access an element from an empty list?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,IndexError: string index out of range — I'm trying to get the last character.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,IndentationError: unexpected indent — my code looks fine but Python complains.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,Why do I get IndentationError: expected an indented block after my if statement?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,IndentationError: unindent does not match any outer indentation level — mixing tabs and spaces?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,I get IndentationError inside a for loop even though I indented the body.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,TypeError: unsupported operand type(s) for +: 'int' and 'str' — what does this mean?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,TypeError: 'NoneType' object is not subscriptable — why is my function returning None?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,TypeError: takes 1 positional argument but 2 were given — happens when I call my class method.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,TypeError: object of type 'int' has no len() — why can't I get the length of a number?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,SyntaxError: invalid syntax on my print statement — I'm using Python 3.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,SyntaxError: EOL while scanning string literal — what does EOL mean?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,SyntaxError: invalid syntax pointing at my else clause — but my if looks fine.,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,SyntaxError: cannot assign to literal — what am I doing wrong?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,How do I use Python's asyncio to run multiple coroutines concurrently with asyncio.gather()?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,What is the difference between deepcopy and shallow copy in Python and when should I use each?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,Why does my Python multithreading code not run faster even with multiple threads?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,How do decorators work internally in Python? Can I write my own?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S001,Student A,What causes a RecursionError: maximum recursion depth exceeded and how do I fix it?,Error: 'Groq' object has no attribute 'messages',"['recursion', 'syntax']",0.548,0.55
+S002,Student B,Why am I getting NameError: name 'total' is not defined in Python?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,I get NameError: name 'np' is not defined. What went wrong?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,NameError: name 'true' is not defined — but I wrote true in my condition.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,Why does Python say NameError: name 'counter' is not defined inside my loop?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,IndexError: list index out of range — why does this crash on the last element?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,I get IndexError when accessing my_list[-4] on a 3-element list. Why?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,Why does IndexError occur when I try to access an element from an empty list?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,IndexError: string index out of range — I'm trying to get the last character.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,IndentationError: unexpected indent — my code looks fine but Python complains.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,Why do I get IndentationError: expected an indented block after my if statement?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,IndentationError: unindent does not match any outer indentation level — mixing tabs and spaces?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,I get IndentationError inside a for loop even though I indented the body.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,TypeError: unsupported operand type(s) for +: 'int' and 'str' — what does this mean?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,TypeError: 'NoneType' object is not subscriptable — why is my function returning None?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,TypeError: takes 1 positional argument but 2 were given — happens when I call my class method.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,TypeError: object of type 'int' has no len() — why can't I get the length of a number?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,SyntaxError: invalid syntax on my print statement — I'm using Python 3.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,SyntaxError: EOL while scanning string literal — what does EOL mean?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,SyntaxError: invalid syntax pointing at my else clause — but my if looks fine.,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,SyntaxError: cannot assign to literal — what am I doing wrong?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,How do I use Python's asyncio to run multiple coroutines concurrently with asyncio.gather()?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,What is the difference between deepcopy and shallow copy in Python and when should I use each?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,Why does my Python multithreading code not run faster even with multiple threads?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,How do decorators work internally in Python? Can I write my own?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S002,Student B,What causes a RecursionError: maximum recursion depth exceeded and how do I fix it?,Error: 'Groq' object has no attribute 'messages',"['loops', 'indexing']",0.548,0.55
+S003,Student C,Why am I getting NameError: name 'total' is not defined in Python?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,I get NameError: name 'np' is not defined. What went wrong?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,NameError: name 'true' is not defined — but I wrote true in my condition.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,Why does Python say NameError: name 'counter' is not defined inside my loop?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,IndexError: list index out of range — why does this crash on the last element?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,I get IndexError when accessing my_list[-4] on a 3-element list. Why?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,Why does IndexError occur when I try to access an element from an empty list?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,IndexError: string index out of range — I'm trying to get the last character.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,IndentationError: unexpected indent — my code looks fine but Python complains.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,Why do I get IndentationError: expected an indented block after my if statement?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,IndentationError: unindent does not match any outer indentation level — mixing tabs and spaces?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,I get IndentationError inside a for loop even though I indented the body.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,TypeError: unsupported operand type(s) for +: 'int' and 'str' — what does this mean?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,TypeError: 'NoneType' object is not subscriptable — why is my function returning None?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,TypeError: takes 1 positional argument but 2 were given — happens when I call my class method.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,TypeError: object of type 'int' has no len() — why can't I get the length of a number?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,SyntaxError: invalid syntax on my print statement — I'm using Python 3.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,SyntaxError: EOL while scanning string literal — what does EOL mean?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,SyntaxError: invalid syntax pointing at my else clause — but my if looks fine.,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,SyntaxError: cannot assign to literal — what am I doing wrong?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,How do I use Python's asyncio to run multiple coroutines concurrently with asyncio.gather()?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,What is the difference between deepcopy and shallow copy in Python and when should I use each?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,Why does my Python multithreading code not run faster even with multiple threads?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,How do decorators work internally in Python? Can I write my own?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S003,Student C,What causes a RecursionError: maximum recursion depth exceeded and how do I fix it?,Error: 'Groq' object has no attribute 'messages',"['indentation', 'syntax']",0.548,0.55
+S004,Student D,Why am I getting NameError: name 'total' is not defined in Python?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,I get NameError: name 'np' is not defined. What went wrong?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,NameError: name 'true' is not defined — but I wrote true in my condition.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,Why does Python say NameError: name 'counter' is not defined inside my loop?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,IndexError: list index out of range — why does this crash on the last element?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,I get IndexError when accessing my_list[-4] on a 3-element list. Why?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,Why does IndexError occur when I try to access an element from an empty list?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,IndexError: string index out of range — I'm trying to get the last character.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,IndentationError: unexpected indent — my code looks fine but Python complains.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,Why do I get IndentationError: expected an indented block after my if statement?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,IndentationError: unindent does not match any outer indentation level — mixing tabs and spaces?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,I get IndentationError inside a for loop even though I indented the body.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,TypeError: unsupported operand type(s) for +: 'int' and 'str' — what does this mean?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,TypeError: 'NoneType' object is not subscriptable — why is my function returning None?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,TypeError: takes 1 positional argument but 2 were given — happens when I call my class method.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,TypeError: object of type 'int' has no len() — why can't I get the length of a number?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,SyntaxError: invalid syntax on my print statement — I'm using Python 3.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,SyntaxError: EOL while scanning string literal — what does EOL mean?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,SyntaxError: invalid syntax pointing at my else clause — but my if looks fine.,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,SyntaxError: cannot assign to literal — what am I doing wrong?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,How do I use Python's asyncio to run multiple coroutines concurrently with asyncio.gather()?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,What is the difference between deepcopy and shallow copy in Python and when should I use each?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,Why does my Python multithreading code not run faster even with multiple threads?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,How do decorators work internally in Python? Can I write my own?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S004,Student D,What causes a RecursionError: maximum recursion depth exceeded and how do I fix it?,Error: 'Groq' object has no attribute 'messages',"['type_conversion', 'operators']",0.548,0.55
+S005,Student E,Why am I getting NameError: name 'total' is not defined in Python?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,I get NameError: name 'np' is not defined. What went wrong?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,NameError: name 'true' is not defined — but I wrote true in my condition.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,Why does Python say NameError: name 'counter' is not defined inside my loop?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,IndexError: list index out of range — why does this crash on the last element?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,I get IndexError when accessing my_list[-4] on a 3-element list. Why?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,Why does IndexError occur when I try to access an element from an empty list?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,IndexError: string index out of range — I'm trying to get the last character.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,IndentationError: unexpected indent — my code looks fine but Python complains.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,Why do I get IndentationError: expected an indented block after my if statement?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,IndentationError: unindent does not match any outer indentation level — mixing tabs and spaces?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,I get IndentationError inside a for loop even though I indented the body.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,TypeError: unsupported operand type(s) for +: 'int' and 'str' — what does this mean?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,TypeError: 'NoneType' object is not subscriptable — why is my function returning None?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,TypeError: takes 1 positional argument but 2 were given — happens when I call my class method.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,TypeError: object of type 'int' has no len() — why can't I get the length of a number?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,SyntaxError: invalid syntax on my print statement — I'm using Python 3.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,SyntaxError: EOL while scanning string literal — what does EOL mean?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,SyntaxError: invalid syntax pointing at my else clause — but my if looks fine.,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,SyntaxError: cannot assign to literal — what am I doing wrong?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,How do I use Python's asyncio to run multiple coroutines concurrently with asyncio.gather()?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,What is the difference between deepcopy and shallow copy in Python and when should I use each?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,Why does my Python multithreading code not run faster even with multiple threads?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,How do decorators work internally in Python? Can I write my own?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55
+S005,Student E,What causes a RecursionError: maximum recursion depth exceeded and how do I fix it?,Error: 'Groq' object has no attribute 'messages',"['imports', 'recursion']",0.548,0.55

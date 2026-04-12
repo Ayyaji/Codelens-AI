@@ -1,0 +1,70 @@
+[
+  {
+    "student_id": "S001",
+    "name": "Student A",
+    "weak_areas": {
+      "recursion": 3,
+      "syntax": 1
+    },
+    "learning_style": "hint-first",
+    "session_history": [
+      "NameError: variable undefined",
+      "RecursionError: max depth exceeded",
+      "RecursionError: incorrect base case"
+    ]
+  },
+  {
+    "student_id": "S002",
+    "name": "Student B",
+    "weak_areas": {
+      "loops": 2,
+      "indexing": 3
+    },
+    "learning_style": "full-explanation",
+    "session_history": [
+      "IndexError: list index out of range",
+      "IndexError: string index out of range",
+      "TypeError: cannot iterate"
+    ]
+  },
+  {
+    "student_id": "S003",
+    "name": "Student C",
+    "weak_areas": {
+      "indentation": 4,
+      "syntax": 2
+    },
+    "learning_style": "example-first",
+    "session_history": [
+      "IndentationError: expected indent",
+      "IndentationError: unindent does not match",
+      "SyntaxError: invalid syntax"
+    ]
+  },
+  {
+    "student_id": "S004",
+    "name": "Student D",
+    "weak_areas": {
+      "type_conversion": 2,
+      "operators": 1
+    },
+    "learning_style": "hint-first",
+    "session_history": [
+      "TypeError: unsupported operand type",
+      "TypeError: cannot concatenate str and int"
+    ]
+  },
+  {
+    "student_id": "S005",
+    "name": "Student E",
+    "weak_areas": {
+      "imports": 1,
+      "recursion": 2
+    },
+    "learning_style": "full-explanation",
+    "session_history": [
+      "ModuleNotFoundError: no module named",
+      "RecursionError: max depth exceeded"
+    ]
+  }
+]
