@@ -1,0 +1,17 @@
+{
+  "baseline": {
+    "faithfulness": 0.4444,
+    "answer_relevancy": 0.8148,
+    "mode": "no_rag_plain_llm"
+  },
+  "rag_system": {
+    "faithfulness": 0.4729,
+    "answer_relevancy": 0.8298,
+    "mode": "rag_multi_agent"
+  },
+  "improvement": {
+    "faithfulness": 0.0285,
+    "answer_relevancy": 0.015
+  },
+  "routing_accuracy": "20/25 (80.0%)"
+}
