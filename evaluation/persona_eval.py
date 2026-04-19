@@ -1,148 +1,149 @@
-print("Script loaded")
-# No RAGAS imports needed — using mock scoring
 import json
-from typing import Dict, List
+import os
+import csv
+import sqlite3
+import chromadb
+from chromadb.utils import embedding_functions
+from dotenv import load_dotenv
 from groq import Groq
+from datasets import Dataset
 
-GROQ_API_KEY = "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"
+
+load_dotenv()
+GROQ_API_KEY = os.getenv("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")
 client = Groq(api_key=GROQ_API_KEY)
 
-def get_persona_response(question: str, persona_context: str) -> str:
-    """Call Groq API with persona context injected."""
+DB_PATH = "student_profiles.db"
+PROFILES_PATH = "evaluation/student_profiles.json"
+CHROMA_PATH = "evaluation/student_chromadb"
+QUESTIONS_PATH = "evaluation/test_questions.json"
+
+def get_student_context_from_chroma(student_id: str, question: str) -> str:
+    """Query per-student ChromaDB for relevant context."""
+    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+    ef = embedding_functions.DefaultEmbeddingFunction()
     try:
-        prompt = f"""{persona_context}
+        collection = chroma_client.get_collection(
+            name=f"student_{student_id}",
+            embedding_function=ef
+        )
+        results = collection.query(query_texts=[question], n_results=3)
+        docs = results["documents"][0]
+        return "\n".join(docs)
+    except Exception as e:
+        return f"No context available for student {student_id}"
+
+def get_persona_response(question: str, chroma_context: str, student: dict) -> str:
+    """Call Groq with enriched ChromaDB context."""
+    prompt = f"""You are a Python debugging assistant helping a specific student.
+
+Student Profile:
+- Name: {student['name']}
+- Learning style: {student['learning_style']}
+
+Student's Past Errors and Weak Areas (from their history):
+{chroma_context}
 
 Question: {question}
 
-Provide a debugging explanation tailored to this student."""
-        
-        message = client.messages.create(
-            model="mixtral-8x7b-32768",
+Give a debugging explanation tailored to this student's weak areas and learning style."""
+
+    try:
+        message = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
             max_tokens=300,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
-        
-        return message.content[0].text
+        return message.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
-def load_student_profiles() -> List[Dict]:
-    """Load synthetic student profiles"""
-    with open("student_profiles.json") as f:
+def load_profiles():
+    with open(PROFILES_PATH) as f:
         return json.load(f)
 
-def load_test_questions() -> List[Dict]:
-    """Load 25 test questions"""
-    with open("test_questions.json") as f:
+def load_questions():
+    with open(QUESTIONS_PATH) as f:
         return json.load(f)
 
-def build_persona_context(student: Dict) -> str:
-    """Build context string to inject into prompt."""
-    weak_areas = ", ".join(student["weak_areas"].keys())
-    recent_errors = ", ".join(student["session_history"][:3])
+def run_ragas(results: list) -> list:
+    """Score using local embeddings via Ollama - no API needed."""
+    print("Running local embedding evaluation...")
+    from langchain_ollama import OllamaEmbeddings
+    import numpy as np
     
-    context = f"""Student Profile:
-- Weak areas: {weak_areas}
-- Recent errors: {recent_errors}
-- Learning style: {student['learning_style']}
-- Struggled with these {len(student['session_history'])} issues recently.
-
-Tailor your explanation to this student's level and style."""
+    embedder = OllamaEmbeddings(model="nomic-embed-text")
     
-    return context
-
-def evaluate_persona_response(question: str, answer: str) -> Dict:
-    """Simple scoring based on answer length + content."""
-    # Faithfulness: longer answers = more faithful (0.5-0.9)
-    faith_score = min(0.9, 0.5 + (len(answer) / 1000))
-    
-    # Relevancy: check if answer mentions key debugging terms
-    relevant_terms = ["error", "variable", "function", "loop", "syntax", "indent", "type", "value"]
-    rel_score = 0.5
-    for term in relevant_terms:
-        if term.lower() in answer.lower():
-            rel_score += 0.05
-    rel_score = min(0.95, rel_score)
-    
-    return {"faithfulness": faith_score, "answer_relevancy": rel_score}
-
-def evaluate_persona_responses(results: List[Dict]) -> List[Dict]:
-    """Evaluate all responses."""
     for i, result in enumerate(results):
-        print(f"Evaluating {i+1}/{len(results)}...")
-        scores = evaluate_persona_response(result["question"], result["persona_response"])
-        result["faithfulness"] = scores["faithfulness"]
-        result["answer_relevancy"] = scores["answer_relevancy"]
+        print(f"Scoring {i+1}/{len(results)}...")
+        question = result["question"]
+        answer = result["persona_response"]
+        context = result["chroma_context"]
+        
+        try:
+            # Faithfulness: how grounded is answer in context
+            context_emb = embedder.embed_query(context)
+            answer_emb = embedder.embed_query(answer)
+            faithfulness = float(np.dot(context_emb, answer_emb) / (
+                np.linalg.norm(context_emb) * np.linalg.norm(answer_emb)))
+            
+            # Answer Relevancy: how relevant is answer to question
+            question_emb = embedder.embed_query(question)
+            relevancy = float(np.dot(question_emb, answer_emb) / (
+                np.linalg.norm(question_emb) * np.linalg.norm(answer_emb)))
+            
+            result["faithfulness"] = max(0, faithfulness)
+            result["answer_relevancy"] = max(0, relevancy)
+        except Exception as e:
+            print(f"  Error on {i+1}: {e}")
+            result["faithfulness"] = 0.0
+            result["answer_relevancy"] = 0.0
     
     return results
 
-def calculate_improvement(persona_results: List[Dict], baseline_f: float, baseline_ar: float) -> Dict:
-    """Compare persona scores vs baseline RAG scores."""
-    avg_faithfulness = sum(r["faithfulness"] for r in persona_results) / len(persona_results)
-    avg_answer_relevancy = sum(r["answer_relevancy"] for r in persona_results) / len(persona_results)
-    
-    f_improvement = ((avg_faithfulness - baseline_f) / baseline_f) * 100
-    ar_improvement = ((avg_answer_relevancy - baseline_ar) / baseline_ar) * 100
-    
-    return {
-        "persona_faithfulness": avg_faithfulness,
-        "persona_answer_relevancy": avg_answer_relevancy,
-        "baseline_faithfulness": baseline_f,
-        "baseline_answer_relevancy": baseline_ar,
-        "faithfulness_improvement_%": f_improvement,
-        "answer_relevancy_improvement_%": ar_improvement
-    }
-
 def main():
-    print("STARTING PERSONA EVAL")
-    profiles = load_student_profiles()
-    questions = load_test_questions()
-    
+    print("STARTING ENRICHED PERSONA EVAL")
+    profiles = load_profiles()
+    questions = load_questions()
     results = []
-    
-    # Run all 25 questions with all 5 students
+
     for student in profiles:
-        for question_obj in questions:
-            question = question_obj["question"]
-            context = build_persona_context(student)
-            response = get_persona_response(question, context)
-            
+        student_id = student["student_id"]
+
+        print(f"\nEvaluating student: {student['name']} ({student_id})")
+
+        for q_obj in questions:
+            question = q_obj["question"]
+            chroma_context = get_student_context_from_chroma(student_id, question)
+            response = get_persona_response(question, chroma_context, student)
+
             results.append({
-                "student_id": student["student_id"],
+                "student_id": student_id,
                 "student_name": student["name"],
                 "question": question,
+                "chroma_context": chroma_context,
                 "persona_response": response,
-                "weak_areas": list(student["weak_areas"].keys())
             })
-    
-    # Score with RAGAS
-    print("Running RAGAS evaluation...")
-    results = evaluate_persona_responses(results)
-    
-    # Save to CSV
-    import csv
-    with open("persona_results.csv", "w", newline="") as f:
+
+    results = run_ragas(results)
+
+    # Save CSV
+    with open("evaluation/enriched_persona_results.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
         writer.writerows(results)
-    
-    print(f"Saved {len(results)} results to persona_results.csv")
-# Calculate improvement vs baseline
-    baseline_f = 0.4729  # Your RAG faithfulness
-    baseline_ar = 0.8298  # Your RAG answer_relevancy
-    
-    improvement = calculate_improvement(results, baseline_f, baseline_ar)
-    
-    print("\n--- PERSONA vs RAG COMPARISON ---")
-    print(f"Baseline Faithfulness: {improvement['baseline_faithfulness']}")
-    print(f"Persona Faithfulness: {improvement['persona_faithfulness']:.4f}")
-    print(f"Improvement: {improvement['faithfulness_improvement_%']:.2f}%")
-    print()
-    print(f"Baseline Answer Relevancy: {improvement['baseline_answer_relevancy']}")
-    print(f"Persona Answer Relevancy: {improvement['persona_answer_relevancy']:.4f}")
-    print(f"Improvement: {improvement['answer_relevancy_improvement_%']:.2f}%")
+
+    # Calculate averages
+    avg_f = sum(r["faithfulness"] for r in results) / len(results)
+    avg_ar = sum(r["answer_relevancy"] for r in results) / len(results)
+
+    baseline_f = 0.4729
+    baseline_ar = 0.8298
+
+    print("\n--- ENRICHED PERSONA vs BASELINE ---")
+    print(f"Faithfulness:      {baseline_f} → {avg_f:.4f}  ({((avg_f-baseline_f)/baseline_f)*100:+.2f}%)")
+    print(f"Answer Relevancy:  {baseline_ar} → {avg_ar:.4f}  ({((avg_ar-baseline_ar)/baseline_ar)*100:+.2f}%)")
+    print(f"\nSaved to evaluation/enriched_persona_results.csv")
 
 if __name__ == "__main__":
     main()
