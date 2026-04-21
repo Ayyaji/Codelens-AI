@@ -1,11 +1,15 @@
-from langchain_ollama import OllamaLLM
+import os
+from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma # type: ignore
+from langchain_chroma import Chroma
 from ddgs import DDGS
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Load shared resources
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-llm = OllamaLLM(model="llama3.2")
+llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API"))
 
 def load_vectorstore():
     return Chroma(
@@ -29,7 +33,7 @@ Student Error: {query}
 
 Explanation and Fix:"""
     
-    return llm.invoke(prompt)
+    return llm.invoke(prompt).content
 
 def concept_agent(query: str) -> str:
     vectorstore = load_vectorstore()
@@ -46,7 +50,7 @@ Student Question: {query}
 
 Explanation:"""
     
-    return llm.invoke(prompt)
+    return llm.invoke(prompt).content
 
 def hint_agent(query: str) -> str:
     vectorstore = load_vectorstore()
@@ -64,7 +68,7 @@ Student Request: {query}
 
 Hint (one or two sentences only):"""
     
-    return llm.invoke(prompt)
+    return llm.invoke(prompt).content
 
 def web_agent(query: str) -> dict:
     """
@@ -99,8 +103,8 @@ Student Question: {query}
 
 Answer:"""
         
-        llm = OllamaLLM(model="llama3.2")
-        answer = llm.invoke(prompt)
+        llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API"))
+        answer = llm.invoke(prompt).content
         
         return {
             "answer": answer,
