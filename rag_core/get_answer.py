@@ -1,6 +1,7 @@
 from langchain_ollama import OllamaLLM
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma # type: ignore
+from langchain_chroma import Chroma# pyright: ignore[reportMissingImports] 
+
 
 def get_answer(query: str) -> dict:
     # Load embeddings
@@ -11,7 +12,7 @@ def get_answer(query: str) -> dict:
         persist_directory="./codelens_kb",
         embedding_function=embeddings
     )
-    ss
+    
     # Retrieve relevant chunks
     retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
     docs = retriever.invoke(query)
