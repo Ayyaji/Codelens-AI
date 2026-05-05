@@ -106,6 +106,35 @@ def log_error(data: ErrorLogCreate):              # ← no more query param
     finally:
         conn.close()
 
+class ProfileUpdate(BaseModel):
+    weak_area: str
+    error_type: str
+    error_message: str
+@app.post("/update-profile/{student_id}")
+def update_profile(student_id: str, data: ProfileUpdate):
+    """Unified endpoint — update weak area + log error in one call."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        # Update weak area count or insert
+        cursor.execute("""
+            INSERT INTO weak_areas (student_id, area, count)
+            VALUES (?, ?, 1)
+            ON CONFLICT DO UPDATE SET count = count + 1
+        """, (student_id, data.weak_area))
+
+        # Log error
+        cursor.execute("""
+            INSERT INTO error_history (student_id, error_type, error_message)
+            VALUES (?, ?, ?)
+        """, (student_id, data.error_type, data.error_message))
+
+        conn.commit()
+        return {"status": "updated", "student_id": student_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
