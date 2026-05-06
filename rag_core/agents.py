@@ -1,4 +1,4 @@
-import os
+import os          
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Load shared resources
+# Load shared resources ONCE at module level
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API"))
 
@@ -103,7 +103,6 @@ Student Question: {query}
 
 Answer:"""
         
-        llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API"))
         answer = llm.invoke(prompt).content
         
         return {

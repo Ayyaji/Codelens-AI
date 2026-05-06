@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import datetime
-from langchain_core.documents import Document
 
 DB_PATH = "./codelens.db"
 
@@ -91,41 +90,3 @@ def reject_item(item_id: int):
     conn.commit()
     conn.close()
     print(f"❌ Item {item_id} rejected")
-
-
-# Test
-if __name__ == "__main__":
-    init_db()
-    stage_for_approval(
-        query="What is Docker?",
-        content="Docker is a containerization platform that packages applications with their dependencies.",
-        source="https://docker.com"
-    )
-    
-    items = get_pending_items()
-    print(f"\nPending items: {len(items)}")
-    for item in items:
-        print(f"ID: {item[0]} | Query: {item[2][:40]} | Status: {item[5]}")
-
-
-
-def log_session(student_id: str, query: str, agent_used: str, response_time: float):
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id TEXT NOT NULL,
-            query TEXT NOT NULL,
-            agent_used TEXT NOT NULL,
-            response_time REAL,
-            timestamp TEXT NOT NULL
-        )
-    """)
-    cursor.execute("""
-        INSERT INTO sessions (student_id, query, agent_used, response_time, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    """, (student_id, query, agent_used, response_time, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()

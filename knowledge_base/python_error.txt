@@ -1,29 +1,62 @@
-NameError: name is not defined
-This error occurs when you try to use a variable or function that has not been defined yet.
-Example: print(x) before x = 10
-Fix: Define the variable before using it.
 
-IndexError: list index out of range
-This error occurs when you try to access an index that does not exist in a list.
-Example: my_list = [1,2,3] then my_list[5]
-Fix: Check the length of the list before accessing an index.
+Copy
 
-IndentationError: unexpected indent
-This error occurs when your code indentation is incorrect.
-Example: mixing tabs and spaces
-Fix: Use consistent indentation — 4 spaces recommended.
-
-TypeError: unsupported operand type
-This error occurs when you perform an operation on incompatible data types.
-Example: "hello" + 5
-Fix: Convert types before operating. Use str(5) or int("5").
-
-SyntaxError: invalid syntax
-This error occurs when Python cannot parse your code.
-Example: missing colon after if statement
-Fix: Check for missing colons, brackets, or quotes.
-
-AttributeError: object has no attribute
-This error occurs when you access an attribute that does not exist on an object.
-Example: my_list.push(1) instead of my_list.append(1)
-Fix: Check the correct method name for the object type.
+ERROR: NameError - name is not defined
+CAUSE: Variable or function used before being defined in the current scope.
+EXAMPLE: print(x) when x has not been assigned a value yet.
+FIX: Define the variable before using it. Check for typos in variable names. Ensure the variable is in the correct scope.
+ 
+ERROR: IndexError - list index out of range
+CAUSE: Accessing a list index that does not exist.
+EXAMPLE: my_list = [1, 2, 3] then accessing my_list[5] or my_list[-10]
+FIX: Check list length using len() before accessing. Use try-except to handle edge cases. Remember indexing starts at 0.
+ 
+ERROR: IndentationError - unexpected indent
+CAUSE: Inconsistent or incorrect indentation in Python code.
+EXAMPLE: Mixing tabs and spaces, or incorrect nesting of code blocks.
+FIX: Use 4 spaces for each indentation level consistently. Do not mix tabs and spaces. Check all if/for/while/def blocks are properly indented.
+ 
+ERROR: TypeError - unsupported operand type
+CAUSE: Performing operations on incompatible data types.
+EXAMPLE: "hello" + 5 or trying to multiply a string by a float.
+FIX: Convert types explicitly using int(), str(), float() before operations. Check variable types using type().
+ 
+ERROR: SyntaxError - invalid syntax
+CAUSE: Python parser cannot understand the code structure.
+EXAMPLE: Missing colon after if/for/while/def statements, unclosed brackets or quotes, invalid operators.
+FIX: Check for missing colons, brackets, parentheses, or quotes. Ensure proper keyword usage. Look at the line number in error message.
+ 
+ERROR: AttributeError - object has no attribute
+CAUSE: Accessing a method or attribute that does not exist on the object.
+EXAMPLE: my_list.push(1) instead of my_list.append(1), or calling wrong method for the data type.
+FIX: Check Python documentation for correct method names. Use dir(object) to see available attributes. Common mistake: confusing list methods with JavaScript array methods.
+ 
+ERROR: KeyError - key not found in dictionary
+CAUSE: Accessing a dictionary key that does not exist.
+EXAMPLE: my_dict = {"name": "John"} then accessing my_dict["age"]
+FIX: Use .get() method instead: my_dict.get("age", default_value). Check if key exists using "age" in my_dict before accessing.
+ 
+ERROR: ValueError - invalid value for operation
+CAUSE: Correct type but inappropriate value for the operation.
+EXAMPLE: int("hello") or math.sqrt(-1) without complex numbers.
+FIX: Validate input before conversion. Use try-except to handle conversion errors. Check value ranges before operations.
+ 
+ERROR: ZeroDivisionError - division by zero
+CAUSE: Attempting to divide a number by zero.
+EXAMPLE: result = 10 / 0 or using modulo with zero: 10 % 0
+FIX: Check if denominator is zero before division. Use conditional statements to prevent division by zero.
+ 
+ERROR: ImportError or ModuleNotFoundError - module not found
+CAUSE: Trying to import a module that is not installed or does not exist.
+EXAMPLE: import pandas when pandas is not installed.
+FIX: Install the module using pip install module_name. Check spelling of module name. Ensure virtual environment is activated if using one.
+ 
+ERROR: FileNotFoundError - file does not exist
+CAUSE: Trying to open or access a file that does not exist at the specified path.
+EXAMPLE: open("data.txt") when data.txt is not in the current directory.
+FIX: Check file path and filename spelling. Use absolute paths or os.path.join() for reliability. Verify file exists using os.path.exists().
+ 
+ERROR: RecursionError - maximum recursion depth exceeded
+CAUSE: Recursive function has no proper base case or base case never reached.
+EXAMPLE: def func(): return func() creates infinite recursion.
+FIX: Ensure recursive function has a base case. Check that base case is reachable. Consider using iteration instead of recursion for deep operations.
