@@ -1,9 +1,14 @@
 import time
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.context_injector import get_persona_context
 from rag_core.router import route_query
 from rag_core.agents import debug_agent, concept_agent, hint_agent, web_agent
 from rag_core.kb_update import stage_for_approval
 from rag_core.judgment import get_student_context, judge_response_level
 from rag_core.session_logger import log_session
+
 
 def run_pipeline(query: str, student_id: str = "anonymous") -> dict:
     # Step 1: Route
@@ -12,6 +17,10 @@ def run_pipeline(query: str, student_id: str = "anonymous") -> dict:
     # Step 2: Judge student state
     context = get_student_context(student_id)
     directive = judge_response_level(query, agent_name, context)
+    # Step 2.5: Inject persona context
+    persona_context = get_persona_context(student_id, query)
+    if persona_context:
+        query = f"{persona_context}\n\nQuestion: {query}"
 
     # Step 3: Run correct agent
     start = time.time()
