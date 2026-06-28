@@ -1,4 +1,4 @@
-CodeLens AI
+CodeLens AI (Live Demo:- http://3.104.106.185/ )
 Adaptive RAG debug assistant for CS students — adjusts how it answers based on how stuck you are.
 
 The Problem
