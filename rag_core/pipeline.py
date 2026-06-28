@@ -1,16 +1,6 @@
 import time
-<<<<<<< HEAD
 
 from rag_core.agents import concept_agent, debug_agent, hint_agent, web_agent
-=======
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.context_injector import get_persona_context
-from rag_core.router import route_query
-from rag_core.agents import debug_agent, concept_agent, hint_agent, web_agent
-from rag_core.kb_update import stage_for_approval
->>>>>>> 8317e5910605e49023502f8ef35b9acc060811f8
 from rag_core.judgment import get_student_context, judge_response_level
 from rag_core.kb_update import stage_for_approval
 from rag_core.profiler import profiler, reset_profiler
@@ -18,16 +8,12 @@ from rag_core.router import route_query
 from rag_core.session_logger import log_session
 
 
-<<<<<<< HEAD
 def run_pipeline(
     query: str, student_id: str = "anonymous", profile: bool = False
 ) -> dict:
     if profile:
         reset_profiler()
 
-=======
-def run_pipeline(query: str, student_id: str = "anonymous") -> dict:
->>>>>>> 8317e5910605e49023502f8ef35b9acc060811f8
     # Step 1: Route
     with profiler.measure("1. Route query") if profile else _no_measure():
         agent_name = route_query(
@@ -35,20 +21,16 @@ def run_pipeline(query: str, student_id: str = "anonymous") -> dict:
         )
 
     # Step 2: Judge student state
-<<<<<<< HEAD
     with profiler.measure("2. Get student context") if profile else _no_measure():
         context = get_student_context(student_id)
 
     with profiler.measure("3. Judge response level") if profile else _no_measure():
         directive = judge_response_level(query, agent_name, context)
-=======
-    context = get_student_context(student_id)
-    directive = judge_response_level(query, agent_name, context)
-    # Step 2.5: Inject persona context
-    persona_context = get_persona_context(student_id, query)
-    if persona_context:
-        query = f"{persona_context}\n\nQuestion: {query}"
->>>>>>> 8317e5910605e49023502f8ef35b9acc060811f8
+
+    # TODO: re-enable once src/context_injector.py is pushed by Nishith
+    # persona_context = get_persona_context(student_id, query)
+    # if persona_context:
+    #     query = f"{persona_context}\n\nQuestion: {query}"
 
     # Step 3: Run correct agent
     if agent_name == "debug":
