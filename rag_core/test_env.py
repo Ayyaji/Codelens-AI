@@ -1,12 +1,13 @@
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
-
+print(repr(os.getenv("GROQ_API")))
 groq_api = os.getenv("GROQ_API")
 
 print("Testing .env configuration")
-print("="*50)
+print("=" * 50)
 
 if groq_api:
     print(f"✅ GROQ_API found: {groq_api[:20]}...{groq_api[-10:]}")
@@ -18,4 +19,4 @@ else:
     print("2. Does it contain: GROQ_API=your_key_here")
     print("3. No spaces around the = sign")
 
-print("="*50)
+print("=" * 50)

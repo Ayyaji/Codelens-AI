@@ -7,7 +7,7 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 
 load_dotenv()
-
+g = os.getenv("GRO")
 # Load shared resources ONCE at module level
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API"))

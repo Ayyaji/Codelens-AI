@@ -27,11 +27,6 @@ def run_pipeline(
     with profiler.measure("3. Judge response level") if profile else _no_measure():
         directive = judge_response_level(query, agent_name, context)
 
-    # TODO: re-enable once src/context_injector.py is pushed by Nishith
-    # persona_context = get_persona_context(student_id, query)
-    # if persona_context:
-    #     query = f"{persona_context}\n\nQuestion: {query}"
-
     # Step 3: Run correct agent
     if agent_name == "debug":
         with profiler.measure("4a. Debug agent") if profile else _no_measure():
