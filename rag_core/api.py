@@ -1,11 +1,18 @@
 import time
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from rag_core.kb_update import approve_item, get_pending_items, reject_item
 from rag_core.pipeline import run_pipeline
 
 app = FastAPI(title="CodeLens AI API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class QueryRequest(BaseModel):

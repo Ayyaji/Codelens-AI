@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>CodeLens AI</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --bg: #0d1117;
+                --bg-raised: #11161d;
+                --border: #1f2630;
+                --text: #e6e8eb;
+                --text-dim: #7a8290;
+                --text-faint: #4a5260;
+                --full: #e8a33d;
+                --hint: #4d9de0;
+                --gentle: #8b7fd1;
+                --break: #d1495b;
+                --mono: "JetBrains Mono", monospace;
+                --sans: "Inter", system-ui, sans-serif;
+            }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                background: var(--bg);
+                color: var(--text);
+                font-family: var(--sans);
+                min-height: 100vh;
+                line-height: 1.5;
+            }
+            *:focus-visible {
+                outline: 2px solid var(--hint);
+                outline-offset: 2px;
+            }
+            @media (prefers-reduced-motion: reduce) {
+                *,
+                *::before,
+                *::after {
+                    animation-duration: 0.01ms !important;
+                    transition-duration: 0.01ms !important;
+                }
+            }
+            .app {
+                max-width: 880px;
+                margin: 0 auto;
+                padding: 32px 24px 80px;
+            }
+            .header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 40px;
+                padding-bottom: 20px;
+                border-bottom: 1px solid var(--border);
+            }
+            .logo {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-family: var(--mono);
+                font-weight: 600;
+                font-size: 15px;
+                letter-spacing: -0.01em;
+            }
+            .logo-mark {
+                width: 22px;
+                height: 22px;
+                border-radius: 6px;
+                background: linear-gradient(135deg, var(--hint), var(--gentle));
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+            }
+            .header-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .student-pill {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-family: var(--mono);
+                font-size: 12px;
+                color: var(--text-dim);
+            }
+            .icon-btn {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                color: var(--text-dim);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.15s ease;
+            }
+            .icon-btn:hover {
+                color: var(--text);
+                border-color: var(--text-faint);
+            }
+            .icon-btn.active {
+                color: var(--hint);
+                border-color: var(--hint);
+                background: rgba(77, 157, 224, 0.08);
+            }
+            .icon-btn svg {
+                width: 16px;
+                height: 16px;
+            }
+            .login-screen {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 70vh;
+                text-align: center;
+            }
+            .login-screen h1 {
+                font-family: var(--mono);
+                font-size: 28px;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+                margin-bottom: 8px;
+            }
+            .login-screen p {
+                color: var(--text-dim);
+                font-size: 14px;
+                margin-bottom: 32px;
+                max-width: 360px;
+            }
+            .login-form {
+                display: flex;
+                gap: 8px;
+            }
+            .login-form input {
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px 16px;
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 14px;
+                width: 220px;
+            }
+            .login-form input::placeholder {
+                color: var(--text-faint);
+            }
+            .btn {
+                background: var(--hint);
+                color: #0d1117;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 22px;
+                font-family: var(--sans);
+                font-weight: 600;
+                font-size: 14px;
+                cursor: pointer;
+                transition: opacity 0.15s ease;
+            }
+            .btn:hover {
+                opacity: 0.85;
+            }
+            .btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            .btn-ghost {
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--text-dim);
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            .directive-strip {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 16px 20px;
+                margin-bottom: 24px;
+                position: relative;
+                overflow: hidden;
+            }
+            .directive-strip::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 3px;
+                background: var(--dot-color, var(--text-faint));
+                transition: background 0.4s ease;
+            }
+            .directive-dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: var(--dot-color, var(--text-faint));
+                flex-shrink: 0;
+                transition: background 0.4s ease;
+            }
+            .directive-dot.pulse {
+                animation: pulse 1.1s ease-out;
+            }
+            @keyframes pulse {
+                0% {
+                    box-shadow: 0 0 0 0 var(--dot-color);
+                }
+                70% {
+                    box-shadow: 0 0 0 10px transparent;
+                }
+                100% {
+                    box-shadow: 0 0 0 0 transparent;
+                }
+            }
+            .directive-info {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                flex: 1;
+            }
+            .directive-label {
+                font-family: var(--mono);
+                font-size: 13px;
+                font-weight: 600;
+                color: var(--dot-color, var(--text));
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+            }
+            .directive-reason {
+                font-size: 12px;
+                color: var(--text-dim);
+            }
+            .directive-strip.idle {
+                opacity: 0.5;
+            }
+            .profiler-panel {
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 16px 20px;
+                margin-bottom: 24px;
+                font-family: var(--mono);
+                font-size: 12px;
+                overflow: hidden;
+                max-height: 0;
+                opacity: 0;
+                padding-top: 0;
+                padding-bottom: 0;
+                margin-bottom: 0;
+                border-width: 0;
+                transition: all 0.25s ease;
+            }
+            .profiler-panel.open {
+                max-height: 320px;
+                opacity: 1;
+                padding-top: 16px;
+                padding-bottom: 16px;
+                margin-bottom: 24px;
+                border-width: 1px;
+            }
+            .profiler-title {
+                color: var(--text-dim);
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                font-size: 11px;
+                margin-bottom: 12px;
+                display: flex;
+                justify-content: space-between;
+            }
+            .profiler-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 6px;
+            }
+            .profiler-row .step-name {
+                color: var(--text-dim);
+                width: 170px;
+                flex-shrink: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .profiler-bar-track {
+                flex: 1;
+                height: 6px;
+                background: var(--border);
+                border-radius: 3px;
+                overflow: hidden;
+            }
+            .profiler-bar-fill {
+                height: 100%;
+                background: var(--hint);
+                border-radius: 3px;
+            }
+            .profiler-row .step-time {
+                color: var(--text);
+                width: 56px;
+                text-align: right;
+                flex-shrink: 0;
+            }
+            .profiler-total {
+                margin-top: 10px;
+                padding-top: 10px;
+                border-top: 1px solid var(--border);
+                color: var(--text);
+                display: flex;
+                justify-content: space-between;
+                font-weight: 600;
+            }
+            .profiler-empty {
+                color: var(--text-faint);
+                font-size: 12px;
+            }
+            .input-card {
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 24px;
+            }
+            .field-label {
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-dim);
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                margin-bottom: 8px;
+                display: block;
+            }
+            textarea {
+                width: 100%;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px 14px;
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 13px;
+                resize: vertical;
+                min-height: 90px;
+            }
+            textarea::placeholder {
+                color: var(--text-faint);
+            }
+            .input-row {
+                margin-bottom: 16px;
+            }
+            .submit-row {
+                display: flex;
+                justify-content: flex-end;
+            }
+            .conversation {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .turn {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                animation: rise 0.35s ease;
+            }
+            @keyframes rise {
+                from {
+                    opacity: 0;
+                    transform: translateY(6px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            .turn-query {
+                font-family: var(--mono);
+                font-size: 13px;
+                color: var(--text-dim);
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 10px 14px;
+                white-space: pre-wrap;
+            }
+            .turn-answer {
+                background: var(--bg-raised);
+                border: 1px solid var(--border);
+                border-left: 3px solid var(--dot-color, var(--text-faint));
+                border-radius: 8px;
+                padding: 16px 18px;
+                font-size: 14px;
+                white-space: pre-wrap;
+            }
+            .turn-meta {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                font-family: var(--mono);
+                font-size: 11px;
+                color: var(--text-faint);
+            }
+            .turn-meta .tag {
+                color: var(--dot-color, var(--text-faint));
+                font-weight: 600;
+                text-transform: uppercase;
+            }
+            .empty-state {
+                text-align: center;
+                padding: 60px 20px;
+                color: var(--text-faint);
+                font-size: 13px;
+            }
+            .loading {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+                color: var(--text-dim);
+                font-family: var(--mono);
+                font-size: 13px;
+                padding: 12px 0;
+            }
+            .loading .dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--text-dim);
+                animation: bounce 1s infinite ease-in-out;
+            }
+            .loading .dot:nth-child(2) {
+                animation-delay: 0.15s;
+            }
+            .loading .dot:nth-child(3) {
+                animation-delay: 0.3s;
+            }
+            @keyframes bounce {
+                0%,
+                80%,
+                100% {
+                    transform: scale(0.7);
+                    opacity: 0.5;
+                }
+                40% {
+                    transform: scale(1);
+                    opacity: 1;
+                }
+            }
+            .error-banner {
+                background: rgba(209, 73, 91, 0.1);
+                border: 1px solid var(--break);
+                border-radius: 8px;
+                padding: 12px 16px;
+                font-size: 13px;
+                color: #f0a8b0;
+                margin-bottom: 16px;
+            }
+            .hidden {
+                display: none !important;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <div id="loginScreen" class="login-screen">
+                <h1>CodeLens AI</h1>
+                <p>
+                    A debug assistant that reads how stuck you are, and answers
+                    accordingly — full explanations, hints, or a nudge to take a
+                    break.
+                </p>
+                <div class="login-form">
+                    <input
+                        id="studentIdInput"
+                        type="text"
+                        placeholder="student id"
+                        autocomplete="off"
+                    />
+                    <button class="btn" id="enterBtn">Enter</button>
+                </div>
+            </div>
+            <div id="mainApp" class="hidden">
+                <div class="header">
+                    <div class="logo">
+                        <div class="logo-mark">&#9670;</div>
+                        CodeLens AI
+                    </div>
+                    <div class="header-right">
+                        <button
+                            id="profilerToggle"
+                            class="icon-btn"
+                            title="Toggle timing breakdown"
+                            aria-label="Toggle timing breakdown"
+                            aria-pressed="false"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="12" cy="13" r="8"></circle>
+                                <path d="M12 9v4l3 2"></path>
+                                <path d="M9 2h6"></path>
+                            </svg>
+                        </button>
+                        <div class="student-pill">
+                            <span id="studentLabel"></span>
+                            <button id="switchBtn" class="btn btn-ghost">
+                                Switch
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="directiveStrip" class="directive-strip idle">
+                    <div id="directiveDot" class="directive-dot"></div>
+                    <div class="directive-info">
+                        <div id="directiveLabel" class="directive-label">
+                            Waiting
+                        </div>
+                        <div id="directiveReason" class="directive-reason">
+                            Ask something to see how CodeLens reads your state
+                        </div>
+                    </div>
+                </div>
+                <div id="profilerPanel" class="profiler-panel">
+                    <div class="profiler-title">
+                        <span>Timing — last request</span
+                        ><span id="profilerTotal"></span>
+                    </div>
+                    <div id="profilerBody">
+                        <div class="profiler-empty">
+                            Ask a question to see the breakdown.
+                        </div>
+                    </div>
+                </div>
+                <div id="errorBanner" class="error-banner hidden"></div>
+                <div class="input-card">
+                    <div class="input-row">
+                        <label class="field-label">What's going wrong</label>
+                        <textarea
+                            id="queryInput"
+                            placeholder='Paste your error, or ask a concept question — e.g. "NameError: name &apos;x&apos; is not defined" or "what is recursion?"'
+                        ></textarea>
+                    </div>
+                    <div class="submit-row">
+                        <button class="btn" id="submitBtn">Ask CodeLens</button>
+                    </div>
+                </div>
+                <div id="conversation" class="conversation">
+                    <div class="empty-state" id="emptyState">
+                        No questions yet — paste an error or ask a concept
+                        question above.
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+            const API_URL = "http://3.104.106.185:8000/ask";
+            const DIRECTIVE_META = {
+                full: {
+                    color: "var(--full)",
+                    label: "Full",
+                    reason: "Fresh question — here is the complete explanation.",
+                },
+                hint: {
+                    color: "var(--hint)",
+                    label: "Hint",
+                    reason: "You've hit this before — a nudge instead of the full answer.",
+                },
+                gentle: {
+                    color: "var(--gentle)",
+                    label: "Gentle",
+                    reason: "Building on something you covered recently.",
+                },
+                break: {
+                    color: "var(--break)",
+                    label: "Break",
+                    reason: "Same error, several times — might be worth stepping away.",
+                },
+            };
+            let studentId = null;
+            let profilerOn = false;
+            const loginScreen = document.getElementById("loginScreen");
+            const mainApp = document.getElementById("mainApp");
+            const studentIdInput = document.getElementById("studentIdInput");
+            const enterBtn = document.getElementById("enterBtn");
+            const studentLabel = document.getElementById("studentLabel");
+            const switchBtn = document.getElementById("switchBtn");
+            const queryInput = document.getElementById("queryInput");
+            const submitBtn = document.getElementById("submitBtn");
+            const conversation = document.getElementById("conversation");
+            const emptyState = document.getElementById("emptyState");
+            const directiveStrip = document.getElementById("directiveStrip");
+            const directiveDot = document.getElementById("directiveDot");
+            const directiveLabel = document.getElementById("directiveLabel");
+            const directiveReason = document.getElementById("directiveReason");
+            const errorBanner = document.getElementById("errorBanner");
+            const profilerToggle = document.getElementById("profilerToggle");
+            const profilerPanel = document.getElementById("profilerPanel");
+            const profilerBody = document.getElementById("profilerBody");
+            const profilerTotal = document.getElementById("profilerTotal");
+            function enterApp() {
+                const val = studentIdInput.value.trim();
+                if (!val) return;
+                studentId = val;
+                studentLabel.textContent = studentId;
+                loginScreen.classList.add("hidden");
+                mainApp.classList.remove("hidden");
+            }
+            enterBtn.addEventListener("click", enterApp);
+            studentIdInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") enterApp();
+            });
+            switchBtn.addEventListener("click", () => {
+                studentId = null;
+                studentIdInput.value = "";
+                conversation.innerHTML = "";
+                conversation.appendChild(emptyState);
+                emptyState.classList.remove("hidden");
+                resetDirective();
+                mainApp.classList.add("hidden");
+                loginScreen.classList.remove("hidden");
+            });
+            profilerToggle.addEventListener("click", () => {
+                profilerOn = !profilerOn;
+                profilerToggle.classList.toggle("active", profilerOn);
+                profilerToggle.setAttribute("aria-pressed", String(profilerOn));
+                profilerPanel.classList.toggle("open", profilerOn);
+            });
+            function resetDirective() {
+                directiveStrip.classList.add("idle");
+                directiveStrip.style.removeProperty("--dot-color");
+                directiveLabel.textContent = "Waiting";
+                directiveReason.textContent =
+                    "Ask something to see how CodeLens reads your state";
+            }
+            function updateDirective(directive) {
+                const meta = DIRECTIVE_META[directive] || DIRECTIVE_META.full;
+                directiveStrip.classList.remove("idle");
+                directiveStrip.style.setProperty("--dot-color", meta.color);
+                directiveLabel.textContent = meta.label;
+                directiveReason.textContent = meta.reason;
+                directiveDot.classList.remove("pulse");
+                requestAnimationFrame(() =>
+                    directiveDot.classList.add("pulse"),
+                );
+            }
+            function renderProfiler(profiling, totalTime) {
+                if (!profiling || Object.keys(profiling).length === 0) {
+                    profilerBody.innerHTML =
+                        '<div class="profiler-empty">No timing data returned for this request.</div>';
+                    profilerTotal.textContent = "";
+                    return;
+                }
+                const entries = Object.entries(profiling).sort(
+                    (a, b) => b[1] - a[1],
+                );
+                const maxVal = Math.max(...entries.map(([, v]) => v), 0.001);
+                profilerBody.innerHTML = entries
+                    .map(([name, val]) => {
+                        const pct = Math.max(2, (val / maxVal) * 100);
+                        return (
+                            '<div class="profiler-row"><span class="step-name" title="' +
+                            name +
+                            '">' +
+                            name +
+                            '</span><div class="profiler-bar-track"><div class="profiler-bar-fill" style="width:' +
+                            pct +
+                            '%"></div></div><span class="step-time">' +
+                            val.toFixed(3) +
+                            "s</span></div>"
+                        );
+                    })
+                    .join("");
+                profilerTotal.textContent =
+                    totalTime != null ? totalTime.toFixed(3) + "s total" : "";
+            }
+            function showError(msg) {
+                errorBanner.textContent = msg;
+                errorBanner.classList.remove("hidden");
+            }
+            function clearError() {
+                errorBanner.classList.add("hidden");
+            }
+            function addTurn(query, answer, agentUsed, directive) {
+                emptyState.classList.add("hidden");
+                const meta = DIRECTIVE_META[directive] || DIRECTIVE_META.full;
+                const turn = document.createElement("div");
+                turn.className = "turn";
+                turn.style.setProperty("--dot-color", meta.color);
+                const queryEl = document.createElement("div");
+                queryEl.className = "turn-query";
+                queryEl.textContent = query;
+                const answerEl = document.createElement("div");
+                answerEl.className = "turn-answer";
+                answerEl.textContent = answer;
+                const metaEl = document.createElement("div");
+                metaEl.className = "turn-meta";
+                metaEl.innerHTML =
+                    '<span class="tag">' +
+                    (agentUsed || "agent") +
+                    '</span><span>&middot;</span><span class="tag">' +
+                    meta.label +
+                    "</span>";
+                turn.appendChild(queryEl);
+                turn.appendChild(answerEl);
+                turn.appendChild(metaEl);
+                conversation.appendChild(turn);
+                turn.scrollIntoView({ behavior: "smooth", block: "end" });
+            }
+            function addLoading() {
+                const loading = document.createElement("div");
+                loading.className = "loading";
+                loading.id = "loadingIndicator";
+                loading.innerHTML =
+                    'Thinking <span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+                conversation.appendChild(loading);
+                loading.scrollIntoView({ behavior: "smooth", block: "end" });
+            }
+            function removeLoading() {
+                const el = document.getElementById("loadingIndicator");
+                if (el) el.remove();
+            }
+            async function submitQuery() {
+                const query = queryInput.value.trim();
+                if (!query || !studentId) return;
+                clearError();
+                submitBtn.disabled = true;
+                addLoading();
+                try {
+                    const res = await fetch(API_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            student_id: studentId,
+                            query: query,
+                            profile: profilerOn,
+                        }),
+                    });
+                    removeLoading();
+                    if (!res.ok) {
+                        showError(
+                            "Server returned an error (" +
+                                res.status +
+                                "). The backend may need a moment — try again.",
+                        );
+                        submitBtn.disabled = false;
+                        return;
+                    }
+                    const data = await res.json();
+                    updateDirective(data.directive);
+                    addTurn(
+                        query,
+                        data.answer,
+                        data.agent_used,
+                        data.directive,
+                    );
+                    renderProfiler(data.profiling, data.response_time);
+                    queryInput.value = "";
+                } catch (err) {
+                    removeLoading();
+                    showError(
+                        "Couldn't reach CodeLens. Check that the backend is running and reachable.",
+                    );
+                }
+                submitBtn.disabled = false;
+            }
+            submitBtn.addEventListener("click", submitQuery);
+            queryInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                    submitQuery();
+            });
+        </script>
+    </body>
+</html>
