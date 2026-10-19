@@ -1,14 +1,14 @@
-from langchain_ollama import OllamaLLM
-from langchain_huggingface import HuggingFaceEmbeddings
+"""Smoke check for the Groq configuration. Does not print the key."""
 
-# Test LLM
-llm = OllamaLLM(model="llama3.2")
-response = llm.invoke("What is a NameError in Python? Answer in one sentence.")
-print("LLM:", response)
+from rag_core.llm import MODEL_LARGE, MODEL_SMALL, get_api_key
 
-# Test Embeddings
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-vector = embeddings.embed_query("NameError in Python")
-print("Embedding length:", len(vector))
-print("First 5 values:", vector[:5])
-print("Embedding length:", len(vector))
+
+def main():
+    print("CodeLens AI — JD-based interview readiness")
+    print(f"routing model: {MODEL_SMALL}")
+    print(f"explanation model: {MODEL_LARGE}")
+    print("GROQ_API_KEY:", "set" if get_api_key() else "missing")
+
+
+if __name__ == "__main__":
+    main()

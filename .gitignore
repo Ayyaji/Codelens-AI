@@ -1,6 +1,15 @@
 venv/
+.venv/
+.pytest_cache/
 __pycache__/
-*.pyc
+*.py[cod]
 .env
-codelens_kb/
+env.txt
 *.db
+*.db-wal
+*.db-shm
+*.sqlite3
+codelens_kb/
+evaluation/student_chromadb/
+chroma_db/
+**/*chromadb*/

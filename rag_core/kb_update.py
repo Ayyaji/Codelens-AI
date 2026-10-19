@@ -1,99 +1,66 @@
-import sqlite3
+"""Stage web results for a teacher before they enter the knowledge base."""
+
 from datetime import datetime
 
-DB_PATH = "./codelens.db"
-
-
-def init_db():
-    """Create kb_pending table if not exists"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS kb_pending (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            query TEXT NOT NULL,
-            content TEXT NOT NULL,
-            source TEXT,
-            timestamp TEXT NOT NULL,
-            status TEXT DEFAULT 'pending'
-        )
-    """)
-    conn.commit()
-    conn.close()
+from rag_core.config import get_kb_dir
+from rag_core.db import connection, init_db
 
 
 def stage_for_approval(query: str, content: str, source: str = None):
-    """Stage new content for teacher approval"""
+    """Stage new content for teacher approval."""
     init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO kb_pending (query, content, source, timestamp, status)
-        VALUES (?, ?, ?, ?, 'pending')
-    """,
-        (query, content, source, datetime.now().isoformat()),
-    )
-    conn.commit()
-    conn.close()
-    print(f"✅ Staged for teacher approval: {query[:50]}...")
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO kb_pending (query, content, source, timestamp, status)
+            VALUES (?, ?, ?, ?, 'pending')
+            """,
+            (query, content, source, datetime.now().isoformat()),
+        )
+    print(f"Staged for teacher approval: {query[:50]}...")
 
 
 def get_pending_items():
-    """Get all pending KB items — used by M3 teacher dashboard"""
+    """Return pending knowledge-base items for the teacher dashboard."""
     init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM kb_pending WHERE status='pending'")
-    items = cursor.fetchall()
-    conn.close()
+    with connection() as conn:
+        items = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT * FROM kb_pending WHERE status='pending'"
+            ).fetchall()
+        ]
     return items
 
 
 def approve_item(item_id: int):
-    """Teacher approves — content enters ChromaDB"""
+    """Teacher approves an item and it is added to Chroma."""
     init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    with connection() as conn:
+        item = conn.execute(
+            "SELECT query, content FROM kb_pending WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        if not item:
+            return False
+        query, content = item[0], item[1]
+        from langchain_chroma import Chroma
+        from langchain_core.documents import Document
+        from langchain_huggingface import HuggingFaceEmbeddings
 
-    # Get the content
-    cursor.execute("SELECT query, content FROM kb_pending WHERE id=?", (item_id,))
-    item = cursor.fetchone()
-
-    if not item:
-        conn.close()
-        return False
-
-    query, content = item
-
-    # Add to ChromaDB
-    from langchain_chroma import Chroma
-    from langchain_core.documents import Document
-    from langchain_huggingface import HuggingFaceEmbeddings
-
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = Chroma(
-        persist_directory="./codelens_kb", embedding_function=embeddings
-    )
-
-    doc = Document(page_content=content, metadata={"source": "web", "query": query})
-    vectorstore.add_documents([doc])
-
-    # Update status
-    cursor.execute("UPDATE kb_pending SET status='approved' WHERE id=?", (item_id,))
-    conn.commit()
-    conn.close()
-
-    print(f"✅ Item {item_id} approved and added to ChromaDB")
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        vectorstore = Chroma(persist_directory=get_kb_dir(), embedding_function=embeddings)
+        vectorstore.add_documents(
+            [Document(page_content=content, metadata={"source": "web", "query": query})]
+        )
+        conn.execute("UPDATE kb_pending SET status='approved' WHERE id=?", (item_id,))
+    print(f"Item {item_id} approved and added to the knowledge base")
     return True
 
 
 def reject_item(item_id: int):
-    """Teacher rejects — content deleted"""
+    """Teacher rejects an item. It stays in SQLite with status rejected."""
     init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE kb_pending SET status='rejected' WHERE id=?", (item_id,))
-    conn.commit()
-    conn.close()
-    print(f"❌ Item {item_id} rejected")
+    with connection() as conn:
+        conn.execute("UPDATE kb_pending SET status='rejected' WHERE id=?", (item_id,))
+    print(f"Item {item_id} rejected")

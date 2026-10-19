@@ -1,6 +1,7 @@
-"""
-Response time profiler for CodeLens pipeline.
-Measures each step: routing, judgment, retrieval, LLM, logging.
+"""Optional step timer for the guidance pipeline.
+
+Agent calls are always logged separately. This report is returned only when
+a request asks for profile=true.
 """
 
 import time

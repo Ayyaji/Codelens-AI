@@ -1,48 +1,29 @@
-from langchain_ollama import OllamaLLM
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma# pyright: ignore[reportMissingImports] 
+"""Single-shot retrieval helper for a guidance question.
+
+The live path is the multi-agent pipeline. This function is the earlier
+retrieve-then-answer shape, now on the shared Groq client.
+"""
+
+from rag_core.agents.retrieval import get_context
+from rag_core.llm import complete_text
 
 
 def get_answer(query: str) -> dict:
-    # Load embeddings
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    
-    # Load existing ChromaDB
-    vectorstore = Chroma(
-        persist_directory="./codelens_kb",
-        embedding_function=embeddings
-    )
-    
-    # Retrieve relevant chunks
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
-    docs = retriever.invoke(query)
-    context = "\n".join([doc.page_content for doc in docs])
-    
-    # Build prompt
-    prompt = f"""You are CodeLens AI, a helpful assistant for engineering students.
-Use the following context to answer the student's question.
-If the answer is not in the context, say "I don't know".
+    context = get_context(query)
+    prompt = f"""You are CodeLens AI, an interview-readiness tutor.
+Use the context below to answer. If the context does not contain the answer, say you do not know.
+Debugging questions are part of interview practice.
 
 Context:
 {context}
 
-Student Question: {query}
+Student: {query}
 
 Answer:"""
-    
-    # Get LLM response
-    llm = OllamaLLM(model="llama3.2")
-    answer = llm.invoke(prompt)
-    
-    return {
-        "query": query,
-        "answer": answer,
-        "context_used": context
-    }
+    answer = complete_text("large", prompt)
+    return {"query": query, "answer": answer, "context_used": context}
 
-# Test it
+
 if __name__ == "__main__":
     result = get_answer("Why am I getting NameError in Python?")
-    print("Question:", result["query"])
-    print("\nAnswer:", result["answer"])
-    print("\nContext used:", result["context_used"])
+    print(result["answer"])

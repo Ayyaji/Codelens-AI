@@ -1,57 +1,51 @@
-from langchain_groq import ChatGroq
-import os
-from dotenv import load_dotenv
+"""Route a guidance question. Obvious cases stay in plain code; the small model handles the rest."""
 
-load_dotenv()
+import re
 
-# Initialize LLM ONCE at module level, not inside function
-llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API"))
+from rag_core.judgment import extract_error_type
+from rag_core.timing import log_latency
 
-def route_query(query: str) -> str:
-    """
-    Routes student query to the correct agent.
-    Returns: "debug", "concept", "hint", or "web"
-    """
-    
-    prompt = f"""You are a query router for CodeLens AI, a Python learning assistant.
-Classify the student query into exactly one of these categories:
+_HINT = re.compile(r"\b(hint|clue)\b", re.IGNORECASE)
+_VALID = {"debug", "concept", "hint", "web"}
 
-- debug: student has an error, exception, or bug in their code
-- concept: student wants to understand a programming concept or topic
-- hint: student explicitly asks for a hint or clue, not full answer
-- web: query is outside Python/programming scope entirely
 
-Respond with ONLY one word: debug, concept, hint, or web
-No explanation. No punctuation. Just one word.
+def _heuristic(query: str) -> str | None:
+    if _HINT.search(query):
+        return "hint"
+    if extract_error_type(query):
+        return "debug"
+    return None
+
+
+def _llm_route(query: str) -> str:
+    from rag_core.llm import complete_text
+
+    prompt = f"""You are the query router for CodeLens AI, an interview-readiness assistant.
+Debugging help is part of guidance. Classify the student query into exactly one category:
+
+- debug: an error, exception, or bug in their code
+- concept: a programming or interview concept they want explained
+- hint: they explicitly ask for a hint or clue, not a full answer
+- web: the query is outside programming and interview preparation
+
+Respond with only one word: debug, concept, hint, or web.
 
 Student query: {query}
 
 Category:"""
-
-    response = llm.invoke(prompt).content.strip().lower()
-    
-    # Validate response
-    valid_routes = ["debug", "concept", "hint", "web"]
-    if response not in valid_routes:
-        return "debug"  # default fallback
-    
-    return response
+    response = complete_text("small", prompt).strip().lower()
+    word = response.split()[0].strip(".,:;") if response else ""
+    if word not in _VALID:
+        return "debug"
+    return word
 
 
-# Test it
-if __name__ == "__main__":
-    import time
-    
-    test_queries = [
-        "I'm getting NameError: name 'x' is not defined",
-        "What is recursion in Python?",
-        "Give me a hint for fixing my IndexError",
-        "What is the capital of France?"
-    ]
-    
-    for query in test_queries:
-        start = time.time()
-        route = route_query(query)
-        routing_time = round(time.time() - start, 2)
-        print(f"Query: {query}")
-        print(f"Route: {route} ({routing_time}s)\n")
+def route_query(query: str) -> str:
+    """Return debug, concept, hint, or web."""
+    with log_latency("router") as info:
+        guessed = _heuristic(query)
+        if guessed:
+            info["llm"] = "no"
+            return guessed
+        info["llm"] = "yes"
+        return _llm_route(query)

@@ -1,11 +1,14 @@
 # DBMS Learning Path for CodeLens AI
 
+CodeLens is an adaptive RAG assistant for JD-based interview readiness. SQLite still backs the judgment layer, and it now also stores job descriptions, cached analyses, generated tests, and a `student_profile` of weak topics and mistake patterns. Debugging help is one part of that guidance, not the whole product.
+
 ## Why DBMS Matters for CodeLens
 
 You're using **SQLite** (`codelens.db`) to track:
 - Student sessions (queries, errors, topics, timestamps)
 - Error patterns (to detect when stuck)
 - Query velocity (5 queries in 10 mins = stuck?)
+- JD text, analysis cache, generated questions, and student profiles
 
 **The gap**: You're doing it right, but inefficiently.
 
@@ -17,7 +20,10 @@ You're using **SQLite** (`codelens.db`) to track:
 ```
 codelens.db (SQLite)
 ├── sessions (student_id, query, agent_used, response_time, error_type, topic, timestamp)
-└── kb_pending (query, content, source, status)  [human curation]
+├── kb_pending (query, content, source, status)  [human curation]
+├── job_descriptions / jd_analysis (JD text and cached skills + roadmap)
+├── generated_tests (questions cached by skill hash)
+└── student_profile (weak topics, mistake patterns, last score)
 ```
 
 ### Current bottlenecks:
