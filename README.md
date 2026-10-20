@@ -133,7 +133,7 @@ Tests mock the model. They do not need a key:
 pytest
 ```
 
-The React client belongs in `frontend/` and is separate work. `student_portal/` is the earlier guidance chat and still talks to `POST /ask`.
+The React client lives in `frontend/`. See `frontend/README.md`. `student_portal/` is the earlier guidance chat and still talks to `POST /ask`.
 
 ## API
 

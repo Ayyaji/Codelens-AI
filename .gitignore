@@ -4,6 +4,7 @@ venv/
 __pycache__/
 *.py[cod]
 .env
+!frontend/.env
 env.txt
 *.db
 *.db-wal
