@@ -20,6 +20,7 @@ export function AnalysisPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!session.jdId || session.analysis) return undefined;
@@ -28,7 +29,12 @@ export function AnalysisPage() {
     setError("");
     analyseJd(session.jdId)
       .then((data) => {
-        if (!cancel) setAnalysis(data);
+        if (cancel) return;
+        if (!data.skills.length) {
+          setError("The analysis came back without any skills. Try the posting again.");
+          return;
+        }
+        setAnalysis(data);
       })
       .catch((err) => {
         if (!cancel) setError(err.message || "Could not analyse that job description.");
@@ -39,7 +45,7 @@ export function AnalysisPage() {
     return () => {
       cancel = true;
     };
-  }, [session.jdId, session.analysis, setAnalysis]);
+  }, [session.jdId, session.analysis, setAnalysis, attempt]);
 
   async function onGenerate() {
     setGenerating(true);
@@ -90,6 +96,11 @@ export function AnalysisPage() {
         }
       />
       <ErrorBanner message={error} />
+      {error && !loading && !analysis ? (
+        <button type="button" className={`${btnGhost} mb-4`} onClick={() => setAttempt((value) => value + 1)}>
+          Try again
+        </button>
+      ) : null}
       {loading ? <LoadingLine label="Reading the posting…" /> : null}
       {analysis ? (
         <div className="space-y-8">

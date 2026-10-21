@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import { runCode, submitTest } from "../api/client";
 import { TerminalView } from "../components/TerminalView";
-import { ErrorBanner, PageHeader, btn, btnGhost } from "../components/ui";
+import { ErrorBanner, LoadingLine, PageHeader, btn, btnGhost } from "../components/ui";
 import { formatClock } from "../lib/format";
 import { useSession } from "../session";
 
@@ -122,6 +122,7 @@ export function TestPage() {
         }
       />
       <ErrorBanner message={error} />
+      {submitting ? <LoadingLine label="Scoring the attempt…" /> : null}
       {confirming ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-full/40 bg-full/10 px-4 py-3 text-sm">
           <p>{unanswered} question{unanswered === 1 ? "" : "s"} still unanswered. Submit anyway?</p>
@@ -201,10 +202,22 @@ function CodingColumn({ questions, answers, onAnswer }) {
   const language = question.language || "python";
 
   async function onRun() {
+    if (!String(code).trim()) {
+      setStdout("");
+      setStderr("");
+      setRunError("Write some Python before running it.");
+      return;
+    }
     setRunning(true);
     setRunError("");
+    setStdout("");
+    setStderr("");
     try {
-      const result = await runCode({ code, language });
+      const result = await runCode({
+        code,
+        language,
+        stdin: question.sample_input ?? "",
+      });
       setStdout(result.stdout || "");
       setStderr(result.stderr || "");
     } catch (err) {
@@ -242,7 +255,7 @@ function CodingColumn({ questions, answers, onAnswer }) {
         <p className="mt-2 text-sm leading-relaxed">{question.prompt}</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <pre className="overflow-x-auto rounded-lg border border-line bg-ink p-3 font-mono text-xs text-mute">
-            <span className="text-faint">stdin{"\n"}</span>
+            <span className="text-faint">sample stdin · sent with Run{"\n"}</span>
             {question.sample_input ?? ""}
           </pre>
           <pre className="overflow-x-auto rounded-lg border border-line bg-ink p-3 font-mono text-xs text-mute">
@@ -269,6 +282,7 @@ function CodingColumn({ questions, answers, onAnswer }) {
           }}
         />
       </div>
+      {running ? <LoadingLine label="Running in the sandbox…" /> : null}
       <TerminalView text={stdout} stderr={stderr} />
       {runError ? <ErrorBanner message={runError} /> : null}
       <div className="flex justify-end">

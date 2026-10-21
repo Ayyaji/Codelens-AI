@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ask } from "../api/client";
 import { DIRECTIVE_COPY, DirectiveBadge } from "../components/DirectiveBadge";
-import { ErrorBanner, PageHeader, btn, field } from "../components/ui";
+import { ErrorBanner, LoadingLine, PageHeader, btn, field } from "../components/ui";
 import { useSession } from "../session";
 
 const ACCENT = {
@@ -111,7 +111,7 @@ export function ChatPage() {
             </article>
           ),
         )}
-        {busy ? <p className="font-mono text-xs text-mute">Waiting on /ask…</p> : null}
+        {busy ? <LoadingLine label="Waiting on /ask…" /> : null}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {STARTERS.map((starter) => (

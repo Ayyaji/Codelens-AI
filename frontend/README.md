@@ -22,23 +22,25 @@ npm run build
 npm run preview
 ```
 
-Start the API separately when you want live data:
+The pages call the API at `VITE_API_URL`. Start it from the repo root before `npm run dev`:
 
 ```bash
 uvicorn rag_core.api:app --reload --port 8000
 ```
 
+`./start-dev.sh` (or `.\start-dev.ps1` on Windows) starts the API and this dev server together. The commands are in the root README.
+
 ## Environment
 
 | Variable | Role |
 | --- | --- |
-| `VITE_API_URL` | Origin of the FastAPI app, for example `http://localhost:8000`. The client reads this at runtime. There is no host fallback in source. |
-| `VITE_USE_MOCKS` | `true` returns fixture JSON for every endpoint except `POST /ask`. |
+| `VITE_API_URL` | Origin of the FastAPI app. Default `http://localhost:8000` when the variable is unset. |
+| `VITE_USE_MOCKS` | Default `false`. `true` returns fixture JSON for every endpoint except `POST /ask`. |
 | `VITE_MOCK_ENDPOINTS` | Optional comma list (`upload`, `analyse`, `generate`, `submit`, `run`). When it is non-empty it replaces the global flag. `POST /ask` is never in this list. |
 
-Mocks live in `src/mocks/`. The switch is in `src/api/client.js`. Turn mocks off and the same functions call the paths in `API_CONTRACT.md`.
+Mocks live in `src/mocks/`. The switch is in `src/api/client.js`. With the flag off, the same functions call the paths in `API_CONTRACT.md`.
 
-`POST /ask` always uses `VITE_API_URL`, including while the other pages are on fixtures. The chat needs the API process and a Groq key in the repo `.env`.
+`POST /ask` always uses `VITE_API_URL`. The chat needs the API process and a Groq key in the repo `.env`. The React UI was built by Arjun.
 
 ## Pages
 

@@ -73,9 +73,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# The Vite dev server is http://localhost:5173 (`npm run dev`) and
+# http://localhost:4173 (`npm run preview`). 127.0.0.1 is listed too, because
+# Windows browsers sometimes open that host instead of localhost. "*" keeps
+# any other client, including the earlier student portal, able to call the API.
+VITE_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*", *VITE_DEV_ORIGINS],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -156,7 +168,12 @@ def analyse(jd_id: str):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/test/generate", response_model=GenerateTestResponse, tags=["test"])
+@app.post(
+    "/test/generate",
+    response_model=GenerateTestResponse,
+    response_model_exclude_none=True,
+    tags=["test"],
+)
 def generate_test(body: GenerateTestRequest):
     try:
         return generate_questions(body.jd_id)
@@ -168,7 +185,7 @@ def generate_test(body: GenerateTestRequest):
 
 @app.post("/run", response_model=RunResponse, tags=["test"])
 def run(body: RunRequest):
-    result = run_code(body.code, language=body.language)
+    result = run_code(body.code, language=body.language, stdin=body.stdin)
     return RunResponse(stdout=result["stdout"], stderr=result["stderr"])
 
 

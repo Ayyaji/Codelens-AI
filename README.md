@@ -43,7 +43,7 @@ Text is extracted from the file in plain code. The small model is called only on
 
 `POST /test/generate` builds a short test from the skills. The answer key and the hidden coding cases stay on the server; the first coding case is returned as a sample.
 
-`POST /run` executes Python in a subprocess with a timeout, a CPU limit, and a memory limit. The child process does not see `GROQ_API_KEY`.
+`POST /run` executes Python in a subprocess with a timeout, a CPU limit, and a memory limit. The editor sends the sample stdin with the code. The child process does not see `GROQ_API_KEY`.
 
 `POST /test/submit` scores the attempt. MCQs are compared in code. Coding answers are checked against their test cases in the sandbox. The larger model is asked to explain failures only. A correct paper does not call a model. Weak topics and mistake patterns are written to `student_profile`, and the guidance text follows the judgment directive.
 
@@ -104,7 +104,53 @@ Stuck means the same error has been logged at least three times, or five turns l
 
 ## Setup
 
-Python 3.10 or newer.
+Python 3.10 or newer, and Node 18 or newer for the React client. The UI in `frontend/` was built by Arjun. It calls this API through `VITE_API_URL` (default `http://localhost:8000`). Fixture JSON stays behind `VITE_USE_MOCKS`, which is off.
+
+The API creates the SQLite file on startup. `python -m rag_core.build_kb` builds the debugging notes used by `POST /ask`. JD upload, analysis, and the test do not read that index.
+
+### Windows (PowerShell)
+
+From the repo root:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+If activation is blocked, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in that window, or call `.\venv\Scripts\python.exe` instead of `python` after the venv exists.
+
+Edit `.env` and set the key:
+
+```text
+GROQ_API_KEY=your_key_here
+```
+
+Build the knowledge base, then start the API:
+
+```powershell
+python -m rag_core.build_kb
+uvicorn rag_core.api:app --reload --port 8000
+```
+
+In a second window, start the client:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173. One window for both processes:
+
+```powershell
+.\start-dev.ps1
+```
+
+### Linux and macOS
+
+From the repo root:
 
 ```bash
 python -m venv venv
@@ -113,27 +159,46 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Put the Groq key in `.env`:
+Edit `.env` and set the key:
 
 ```bash
 GROQ_API_KEY=your_key_here
 ```
 
-Then build the local database and the debugging knowledge base, and start the API:
+Build the knowledge base, then start the API:
 
 ```bash
-python -m rag_core.init_db
 python -m rag_core.build_kb
 uvicorn rag_core.api:app --reload --port 8000
 ```
 
-Tests mock the model. They do not need a key:
+In a second terminal, start the client:
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Open http://localhost:5173. One terminal for both processes:
+
+```bash
+./start-dev.sh
+```
+
+### Tests
+
+The API tests mock the model. They do not need a key:
 
 ```bash
 pytest
 ```
 
-The React client lives in `frontend/`. See `frontend/README.md`. `student_portal/` is the earlier guidance chat and still talks to `POST /ask`.
+The client production build:
+
+```bash
+cd frontend && npm install && npm run build
+```
+
+`student_portal/` is the earlier guidance chat and still talks to `POST /ask`. See `frontend/README.md` for the page list.
 
 ## API
 
@@ -143,7 +208,7 @@ The React client lives in `frontend/`. See `frontend/README.md`. `student_portal
 | `POST` | `/jd/upload` | JSON `{ "text" }` or a multipart file field `file` (PDF or text) | `{ "jd_id" }` |
 | `GET` | `/jd/analyse/{jd_id}` | | `{ "skills", "roadmap" }` |
 | `POST` | `/test/generate` | `{ "jd_id" }` | `{ "jd_id", "questions" }` |
-| `POST` | `/run` | `{ "code", "language" }` | `{ "stdout", "stderr" }` |
+| `POST` | `/run` | `{ "code", "language", "stdin?" }` | `{ "stdout", "stderr" }` |
 | `POST` | `/test/submit` | `{ "student_id", "jd_id", "answers" }` | `{ "score", "weak_topics", "guidance" }` |
 
 `guidance` is `{ "directive", "message", "next_steps", "mistake_patterns" }`. `score` is 0 to 100.

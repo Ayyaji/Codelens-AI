@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { uploadJd } from "../api/client";
-import { ErrorBanner, PageHeader, btn, field } from "../components/ui";
+import { ErrorBanner, LoadingLine, PageHeader, btn, field } from "../components/ui";
 import { useSession } from "../session";
 
 const MAX_BYTES = 2_000_000;
@@ -67,6 +67,7 @@ export function UploadPage() {
         lede="Drop a PDF or text file, or paste the posting. A file is sent when both are filled. Analysis starts from the id the API returns."
       />
       <ErrorBanner message={error} />
+      {busy ? <LoadingLine label="Uploading the posting…" /> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-2">
         <label

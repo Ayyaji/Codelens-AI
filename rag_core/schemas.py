@@ -101,11 +101,21 @@ class RunRequest(BaseModel):
 
     code: str
     language: str = "python"
+    # Sample input for the editor's Run button. Coding tasks read stdin.
+    # Whitespace is kept: a trailing newline is part of the sample.
+    stdin: str = ""
 
     @field_validator("code", "language")
     @classmethod
     def not_blank(cls, value: str) -> str:
         return _stripped(value)
+
+    @field_validator("stdin", mode="before")
+    @classmethod
+    def stdin_text(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value)
 
 
 class RunResponse(BaseModel):

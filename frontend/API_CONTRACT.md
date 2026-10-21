@@ -2,11 +2,11 @@
 
 The React client calls the FastAPI app. Paths and JSON below match `rag_core/schemas.py` and `rag_core/api.py` as this frontend was written. Where the UI computes something the API does not send, that is called out so the backend can confirm or replace it.
 
-Base URL: `VITE_API_URL` (no path prefix, no trailing slash). The browser sends requests directly. CORS on the API already allows any origin.
+Base URL: `VITE_API_URL` (no path prefix, no trailing slash). When the variable is missing the client uses `http://localhost:8000`. The browser sends requests directly. CORS allows the Vite dev origin (`http://localhost:5173` and `http://127.0.0.1:5173`, plus the preview port 4173) and any other origin.
 
 Errors are FastAPI's `{"detail": "<message>"}` with status 400, 404, 413, or 502. `detail` may be a string or a validation list. The client surfaces it as text.
 
-`POST /ask` is never mocked. Every other call below uses `src/mocks/` when `VITE_USE_MOCKS=true`, or when its name appears in `VITE_MOCK_ENDPOINTS`.
+`POST /ask` is never mocked. Every other call below uses `src/mocks/` only when `VITE_USE_MOCKS=true`, or when its name appears in `VITE_MOCK_ENDPOINTS`. The committed default is `VITE_USE_MOCKS=false`, so the screens call this API.
 
 Directive values on the wire are lowercase: `full`, `hint`, `gentle`, `break`. The UI prints them as FULL / HINT / GENTLE / BREAK.
 
@@ -156,10 +156,10 @@ The UI assumes a short test: several MCQs and one or more coding questions. The 
 
 Mock name: `run`.
 
-Request:
+Request. `stdin` is the sample shown next to the editor. It may be omitted; the server then uses an empty string. A trailing newline is kept.
 
 ```json
-{ "code": "print(2)\n", "language": "python" }
+{ "code": "print(int(input()) * 2)\n", "language": "python", "stdin": "2\n" }
 ```
 
 Response. Only these two fields:
@@ -168,7 +168,7 @@ Response. Only these two fields:
 { "stdout": "4\n", "stderr": "" }
 ```
 
-The mock returns a fixed `stdout` of `4\n` for Python so the terminal has something to show. The real sandbox runs the code. Non-Python languages come back as an empty stdout and a stderr message. The client prints stdout as-is and stderr in red. It does not send stdin; sample input is displayed, not piped. The sandbox's `stdin` argument is not part of the HTTP body today.
+The mock returns a fixed `stdout` of `4\n` for Python so the terminal has something to show. The real sandbox runs the code and feeds `stdin` to the process. Non-Python languages come back as an empty stdout and a stderr message. The client prints stdout as-is and stderr in red. Submit still does not send stdin: hidden cases stay on the server.
 
 ---
 

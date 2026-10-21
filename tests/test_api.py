@@ -174,6 +174,36 @@ def test_run_returns_stdout_and_stderr(client):
     assert response.json() == {"stdout": "2\n", "stderr": ""}
 
 
+def test_run_feeds_sample_stdin(client):
+    response = client.post(
+        "/run",
+        json={
+            "code": "print(int(input()) * 2)",
+            "language": "python",
+            "stdin": "2\n",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stdout": "4\n", "stderr": ""}
+
+
+def test_cors_allows_the_vite_dev_origin(client):
+    live = client.get("/", headers={"Origin": "http://localhost:5173"})
+    assert live.headers["access-control-allow-origin"] in {"*", "http://localhost:5173"}
+
+    preflight = client.options(
+        "/jd/upload",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] in {"*", "http://127.0.0.1:5173"}
+    assert "POST" in preflight.headers["access-control-allow-methods"]
+
+
 def test_text_file_upload(client, monkeypatch):
     _stub_model(monkeypatch)
     response = client.post(

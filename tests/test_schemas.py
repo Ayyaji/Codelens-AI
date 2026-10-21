@@ -40,6 +40,10 @@ def test_ask_response_carries_the_guidance_contract():
 def test_run_contract_is_stdout_and_stderr_only():
     with pytest.raises(ValidationError):
         RunRequest(code="  ", language="python")
+    parsed = RunRequest(code="print(1)", stdin=None)
+    assert parsed.stdin == ""
+    kept = RunRequest(code="print(1)", stdin="2\n")
+    assert kept.stdin == "2\n"
     response = RunResponse(stdout="2\n", stderr="")
     assert set(response.model_dump()) == {"stdout", "stderr"}
 

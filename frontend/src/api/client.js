@@ -29,11 +29,113 @@ export function mocksActive() {
 }
 
 function apiBase() {
-  const base = import.meta.env.VITE_API_URL;
-  if (!base || typeof base !== "string" || !base.trim()) {
-    throw new ApiError("Set VITE_API_URL in frontend/.env before calling the API.");
-  }
+  const configured = import.meta.env.VITE_API_URL;
+  const base = typeof configured === "string" && configured.trim() ? configured : "http://localhost:8000";
   return base.trim().replace(/\/$/, "");
+}
+
+function detailMessage(detail, fallback) {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const lines = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        const loc = Array.isArray(item?.loc) ? item.loc.filter((part) => part !== "body").join(".") : "";
+        const msg = item?.msg || item?.message || "";
+        if (loc && msg) return `${loc}: ${msg}`;
+        return msg || loc;
+      })
+      .filter(Boolean);
+    if (lines.length) return lines.join("; ");
+  }
+  if (detail && typeof detail === "object") return JSON.stringify(detail);
+  return fallback;
+}
+
+function asText(value) {
+  return value == null ? "" : String(value);
+}
+
+function normalizeQuestion(question) {
+  const type = asText(question?.type).trim().toLowerCase();
+  const options = Array.isArray(question?.options)
+    ? question.options.map((option) => asText(option).trim()).filter(Boolean)
+    : [];
+  const normalized = {
+    id: asText(question?.id).trim(),
+    type,
+    skill: asText(question?.skill),
+    prompt: asText(question?.prompt),
+  };
+  if (type === "mcq") normalized.options = options;
+  if (type === "coding") {
+    normalized.language = asText(question?.language).trim() || "python";
+    normalized.starter_code = question?.starter_code == null ? "" : String(question.starter_code);
+    normalized.sample_input = question?.sample_input == null ? "" : String(question.sample_input);
+    normalized.sample_output = question?.sample_output == null ? "" : String(question.sample_output);
+  }
+  return normalized;
+}
+
+function normalizeAnalysis(data) {
+  const skills = (Array.isArray(data?.skills) ? data.skills : [])
+    .map((skill) => ({
+      name: asText(skill?.name).trim(),
+      level: asText(skill?.level).trim().toLowerCase() || "intermediate",
+      explanation: asText(skill?.explanation),
+    }))
+    .filter((skill) => skill.name);
+  const roadmap = (Array.isArray(data?.roadmap) ? data.roadmap : [])
+    .map((item, index) => ({
+      order: Number(item?.order ?? index + 1) || index + 1,
+      skill: asText(item?.skill),
+      goal: asText(item?.goal),
+      practice: asText(item?.practice),
+    }))
+    .filter((item) => item.goal || item.skill || item.practice);
+  return { skills, roadmap };
+}
+
+function normalizeTopics(topics) {
+  if (!Array.isArray(topics)) return [];
+  return topics
+    .map((topic) => {
+      if (typeof topic === "string") return topic;
+      if (topic && typeof topic === "object") return asText(topic.topic || topic.name || topic.skill);
+      return asText(topic);
+    })
+    .map((topic) => topic.trim())
+    .filter(Boolean);
+}
+
+function normalizeSubmit(data) {
+  const guidance = data?.guidance && typeof data.guidance === "object" ? data.guidance : {};
+  return {
+    score: Number(data?.score ?? 0),
+    weak_topics: normalizeTopics(data?.weak_topics),
+    guidance: {
+      directive: asText(guidance.directive).trim().toLowerCase(),
+      message: asText(guidance.message),
+      next_steps: Array.isArray(guidance.next_steps) ? guidance.next_steps.map((step) => asText(step)).filter(Boolean) : [],
+      mistake_patterns: Array.isArray(guidance.mistake_patterns)
+        ? guidance.mistake_patterns.map((pattern) => asText(pattern)).filter(Boolean)
+        : [],
+    },
+  };
+}
+
+function normalizeAsk(data) {
+  let answer = data?.answer;
+  if (answer && typeof answer === "object") answer = answer.answer ?? "";
+  return {
+    answer: asText(answer),
+    agent_used: asText(data?.agent_used),
+    directive: asText(data?.directive).trim().toLowerCase(),
+    student_id: data?.student_id,
+    query: data?.query,
+    response_time: data?.response_time,
+    profiling: data?.profiling,
+  };
 }
 
 async function request(path, { method = "GET", json, body } = {}) {
@@ -62,57 +164,71 @@ async function request(path, { method = "GET", json, body } = {}) {
   }
 
   if (!response.ok) {
-    const detail = data?.detail;
-    const message =
-      typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : response.statusText || "Request failed";
-    throw new ApiError(message, response.status);
+    throw new ApiError(detailMessage(data?.detail, response.statusText || "Request failed"), response.status);
   }
   return data;
 }
 
 /** POST /ask is always live. It is not covered by the mock flag. */
-export function ask({ studentId, query }) {
-  return request("/ask", {
+export async function ask({ studentId, query }) {
+  const data = await request("/ask", {
     method: "POST",
     json: { student_id: studentId, query },
   });
+  return normalizeAsk(data);
 }
 
-export function uploadJd({ file, text }) {
-  if (mockEnabled("upload")) return mockUpload();
-  if (file) {
+export async function uploadJd({ file, text }) {
+  let data;
+  if (mockEnabled("upload")) {
+    data = await mockUpload();
+  } else if (file) {
     const body = new FormData();
     body.append("file", file);
-    return request("/jd/upload", { method: "POST", body });
+    data = await request("/jd/upload", { method: "POST", body });
+  } else {
+    data = await request("/jd/upload", {
+      method: "POST",
+      json: { text, filename: "jd.txt" },
+    });
   }
-  return request("/jd/upload", {
-    method: "POST",
-    json: { text, filename: "jd.txt" },
-  });
+  if (!data?.jd_id) throw new ApiError("The API did not return a job description id.");
+  return { jd_id: String(data.jd_id) };
 }
 
-export function analyseJd(jdId) {
-  if (mockEnabled("analyse")) return mockAnalysis();
-  return request(`/jd/analyse/${encodeURIComponent(jdId)}`);
+export async function analyseJd(jdId) {
+  const data = mockEnabled("analyse") ? await mockAnalysis() : await request(`/jd/analyse/${encodeURIComponent(jdId)}`);
+  return normalizeAnalysis(data);
 }
 
-export function generateTest(jdId) {
-  if (mockEnabled("generate")) return mockGenerate();
-  return request("/test/generate", { method: "POST", json: { jd_id: jdId } });
+export async function generateTest(jdId) {
+  const data = mockEnabled("generate")
+    ? await mockGenerate()
+    : await request("/test/generate", { method: "POST", json: { jd_id: jdId } });
+  const questions = (Array.isArray(data?.questions) ? data.questions : []).map(normalizeQuestion).filter((question) => question.id);
+  if (!questions.length) throw new ApiError("The API did not return any questions.");
+  return { jd_id: asText(data?.jd_id || jdId), questions };
 }
 
-export function submitTest({ studentId, jdId, answers }) {
-  if (mockEnabled("submit")) return mockSubmit();
-  return request("/test/submit", {
-    method: "POST",
-    json: { student_id: studentId, jd_id: jdId, answers },
-  });
+export async function submitTest({ studentId, jdId, answers }) {
+  const data = mockEnabled("submit")
+    ? await mockSubmit()
+    : await request("/test/submit", {
+        method: "POST",
+        json: { student_id: studentId, jd_id: jdId, answers },
+      });
+  return normalizeSubmit(data);
 }
 
-export function runCode({ code, language }) {
-  if (mockEnabled("run")) return mockRun({ code, language });
-  return request("/run", {
-    method: "POST",
-    json: { code, language },
-  });
+export async function runCode({ code, language, stdin = "" }) {
+  const data = mockEnabled("run")
+    ? await mockRun({ code, language, stdin })
+    : await request("/run", {
+        method: "POST",
+        json: { code, language, stdin: stdin ?? "" },
+      });
+  return {
+    stdout: data?.stdout == null ? "" : String(data.stdout),
+    stderr: data?.stderr == null ? "" : String(data.stderr),
+  };
 }
