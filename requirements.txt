@@ -7,6 +7,10 @@ langchain-groq>=1.0.0
 langchain-core>=0.3.0
 langchain-chroma>=0.1.4
 langchain-huggingface>=0.1.0
+# HuggingFaceEmbeddings imports this at runtime. The base langchain-huggingface
+# install does not, which is why build_kb failed with
+# "Could not import sentence_transformers".
+sentence-transformers>=5.2.0,<6.0.0
 langchain-community>=0.3.0
 langchain-text-splitters>=0.3.0
 ddgs>=9.0.0
