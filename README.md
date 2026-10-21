@@ -106,7 +106,9 @@ Stuck means the same error has been logged at least three times, or five turns l
 
 Python 3.10 or newer, and Node 18 or newer for the React client. The UI in `frontend/` was built by Arjun. It calls this API through `VITE_API_URL` (default `http://localhost:8000`). Fixture JSON stays behind `VITE_USE_MOCKS`, which is off.
 
-The API creates the SQLite file on startup. `python -m rag_core.build_kb` builds the debugging notes used by `POST /ask`. JD upload, analysis, and the test do not read that index.
+The API creates the SQLite file on startup. `python -m rag_core.build_kb` builds the debugging notes used by `POST /ask`. That command needs `sentence-transformers`, which is listed in `requirements.txt` because `langchain-huggingface` does not install it on its own. JD upload, analysis, and the test do not read that index.
+
+On startup the API loads the `all-MiniLM-L6-v2` embedding model and, when the index exists, opens it. That work used to land on the first `POST /ask`. The server log line `embedding model ready` means a guidance question will not wait on the model load.
 
 ### Windows (PowerShell)
 

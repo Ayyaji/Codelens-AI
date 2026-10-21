@@ -2,7 +2,6 @@
 
 from datetime import datetime
 
-from rag_core.config import get_kb_dir
 from rag_core.db import connection, init_db
 
 
@@ -44,15 +43,15 @@ def approve_item(item_id: int):
         if not item:
             return False
         query, content = item[0], item[1]
-        from langchain_chroma import Chroma
-        from langchain_core.documents import Document
-        from langchain_huggingface import HuggingFaceEmbeddings
 
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        vectorstore = Chroma(persist_directory=get_kb_dir(), embedding_function=embeddings)
-        vectorstore.add_documents(
-            [Document(page_content=content, metadata={"source": "web", "query": query})]
-        )
+    from langchain_core.documents import Document
+
+    from rag_core.agents.retrieval import get_vectorstore
+
+    get_vectorstore().add_documents(
+        [Document(page_content=content, metadata={"source": "web", "query": query})]
+    )
+    with connection() as conn:
         conn.execute("UPDATE kb_pending SET status='approved' WHERE id=?", (item_id,))
     print(f"Item {item_id} approved and added to the knowledge base")
     return True

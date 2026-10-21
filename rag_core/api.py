@@ -21,6 +21,7 @@ from rag_core.agents.evaluator import evaluate_questions
 from rag_core.agents.guide import build_guidance
 from rag_core.agents.jd_analyser import analyse_jd, extract_text, store_jd
 from rag_core.agents.question_gen import generate_questions, load_questions
+from rag_core.agents.retrieval import warm_retrieval
 from rag_core.db import connection, init_db
 from rag_core.judgment import extract_error_type
 from rag_core.kb_update import approve_item, get_pending_items, reject_item
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
     configure_logging()
     init_db()
     init_clients()
+    warm_retrieval()
     yield
 
 
