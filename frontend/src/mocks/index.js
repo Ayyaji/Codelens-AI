@@ -1,13 +1,41 @@
 /**
- * Fixtures for every endpoint except POST /ask.
+ * Fixtures for the JD, test, auth, My Space, and teacher routes.
  * Shapes match rag_core/schemas.py. See frontend/API_CONTRACT.md.
+ * POST /ask is mocked only when VITE_USE_MOCKS or the `ask` name is on.
  */
+
+import { rememberAttempt, rememberJd } from "./store";
+
+export {
+  DEMO_ACCOUNTS,
+  mockActivity,
+  mockApproveKb,
+  mockAsk,
+  mockEditKb,
+  mockHistory,
+  mockLogin,
+  mockMe,
+  mockMyChat,
+  mockMyChats,
+  mockOverview,
+  mockPendingKb,
+  mockPersona,
+  mockRegister,
+  mockRejectKb,
+  mockResetStudent,
+  mockSetDisabled,
+  mockStudent,
+  mockStudentChat,
+  mockStudentChats,
+  mockStudents,
+} from "./store";
 
 const wait = (ms = 280) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function mockUpload() {
+export async function mockUpload({ token, filename } = {}) {
   await wait();
-  return { jd_id: "jd_mock_8f3a1c" };
+  if (!token) return { jd_id: "jd_mock_8f3a1c" };
+  return rememberJd({ token, filename });
 }
 
 export async function mockAnalysis() {
@@ -137,9 +165,9 @@ export async function mockGenerate() {
   };
 }
 
-export async function mockSubmit() {
+export async function mockSubmit({ token, jdId } = {}) {
   await wait(360);
-  return {
+  const result = {
     score: 66.7,
     weak_topics: ["SQL", "Testing"],
     guidance: {
@@ -153,6 +181,8 @@ export async function mockSubmit() {
       mistake_patterns: ["concept_gap:SQL", "wrong_output:Testing"],
     },
   };
+  if (token) rememberAttempt({ token, jdId, result });
+  return result;
 }
 
 export async function mockRun({ code, language }) {

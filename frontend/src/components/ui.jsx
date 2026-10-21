@@ -32,8 +32,46 @@ export function LoadingLine({ label }) {
 export const btn =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-hint px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40";
 
+export const btnDanger =
+  "inline-flex items-center justify-center gap-2 rounded-lg bg-break px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40";
+
 export const btnGhost =
   "inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-panel px-4 py-2 text-sm font-medium text-mute transition hover:border-faint hover:text-paper disabled:cursor-not-allowed disabled:opacity-40";
 
 export const field =
   "w-full rounded-lg border border-line bg-ink px-3 py-2.5 text-sm text-paper outline-none placeholder:text-faint focus:border-hint";
+
+export function ConfirmDialog({ open, title, body, confirmLabel, onConfirm, onClose, busy, danger }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-40 grid place-items-center bg-ink/70 px-4"
+      onClick={busy ? undefined : onClose}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        className="w-full max-w-md rounded-xl border border-line bg-panel p-5"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !busy) onClose();
+        }}
+      >
+        <h2 id="confirm-title" className="text-lg font-semibold text-paper">
+          {title}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-mute">{body}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={btnGhost} onClick={onClose} disabled={busy} autoFocus>
+            Cancel
+          </button>
+          <button type="button" className={danger ? btnDanger : btn} onClick={onConfirm} disabled={busy}>
+            {busy ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

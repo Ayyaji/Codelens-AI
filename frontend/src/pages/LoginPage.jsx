@@ -1,79 +1,139 @@
 import { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
+import { friendlyError, loginAccount, mocksActive } from "../api/client";
+import { AuthFrame } from "../components/AuthFrame";
 import { btn, field } from "../components/ui";
-import { useSession } from "../session";
+import { DEMO_ACCOUNTS } from "../mocks";
+import { homeFor, useSession } from "../session";
+
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export function LoginPage() {
-  const { session, login } = useSession();
+  const { session, signIn, notice, clearNotice } = useSession();
   const navigate = useNavigate();
-  const [studentId, setStudentId] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const demos = mocksActive();
 
-  if (session.studentId) return <Navigate to="/upload" replace />;
+  if (session.user) return <Navigate to={homeFor(session.user)} replace />;
 
-  function onSubmit(event) {
+  function fill(account) {
+    setEmail(account.email);
+    setPassword(account.password);
+    setError("");
+  }
+
+  async function onSubmit(event) {
     event.preventDefault();
-    const id = studentId.trim();
-    if (!id) {
-      setError("Enter a student id to continue.");
+    clearNotice();
+    const nextEmail = email.trim().toLowerCase();
+    if (!EMAIL.test(nextEmail)) {
+      setError("Enter a valid email address.");
       return;
     }
-    if (id.length > 64) {
-      setError("Use a student id of 64 characters or fewer.");
+    if (!password) {
+      setError("Enter the password.");
       return;
     }
-    login(id);
-    navigate("/upload", { replace: true });
+    setBusy(true);
+    setError("");
+    try {
+      const data = await loginAccount({ email: nextEmail, password });
+      signIn(data.user);
+      navigate(homeFor(data.user), { replace: true });
+    } catch (err) {
+      setError(friendlyError(err));
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="border-b border-line">
-        <div className="mx-auto flex h-14 max-w-6xl items-center px-4">
-          <span className="flex items-center gap-2 font-mono text-sm font-semibold">
-            <span className="grid h-6 w-6 place-items-center rounded-md bg-hint text-[11px] font-bold text-ink">CL</span>
-            CodeLens
-          </span>
-        </div>
-      </header>
-      <main className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 py-16">
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-hint">Interview readiness</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">CodeLens AI</h1>
-        <p className="mt-3 text-sm leading-relaxed text-mute">
-          Upload a job description, read the skills it actually asks for, sit a short test, and get guidance that
-          changes with the session: a full explanation, a hint, a gentle reminder, or a break.
+    <AuthFrame>
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-hint">Interview readiness</p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Sign in</h1>
+      <p className="mt-3 text-sm leading-relaxed text-mute">
+        Students land in My Space. Teachers land on the dashboard. Teacher accounts are created on the server, not on
+        this form.
+      </p>
+      <form onSubmit={onSubmit} noValidate className="mt-8 flex flex-col gap-3">
+        <label className="text-xs text-mute" htmlFor="login-email">
+          Email
+        </label>
+        <input
+          id="login-email"
+          className={field}
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="ada@school.edu"
+          autoComplete="username"
+          autoFocus
+        />
+        <label className="text-xs text-mute" htmlFor="login-password">
+          Password
+        </label>
+        <input
+          id="login-password"
+          className={field}
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="password"
+          autoComplete="current-password"
+        />
+        <button type="submit" className={btn} disabled={busy}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+      {notice ? (
+        <p role="status" className="mt-3 text-sm text-full">
+          {notice}
         </p>
-        <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <label className="sr-only" htmlFor="student-id">
-            Student id
-          </label>
-          <input
-            id="student-id"
-            className={field}
-            value={studentId}
-            onChange={(event) => setStudentId(event.target.value)}
-            placeholder="student id"
-            autoComplete="username"
-            autoFocus
-          />
-          <button type="submit" className={btn}>
-            Enter
-          </button>
-        </form>
-        {error ? (
-          <p role="alert" className="mt-3 text-sm text-break">
-            {error}
+      ) : null}
+      {error ? (
+        <p role="alert" className="mt-3 text-sm text-break">
+          {error}
+        </p>
+      ) : null}
+      <p className="mt-6 text-sm text-mute">
+        New student?{" "}
+        <Link to="/register" className="text-hint hover:underline">
+          Create an account
+        </Link>
+      </p>
+      {demos ? (
+        <div className="mt-8 rounded-xl border border-line bg-panel p-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-full">Mock accounts</p>
+          <ul className="mt-3 space-y-2">
+            {DEMO_ACCOUNTS.map((account) => (
+              <li key={account.email} className="flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block text-sm text-paper">{account.name}</span>
+                  <span className="block truncate font-mono text-[11px] text-faint">
+                    {account.role} · {account.email}
+                  </span>
+                </span>
+                <button type="button" className="shrink-0 text-xs text-hint hover:underline" onClick={() => fill(account)}>
+                  Fill
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-faint">
+            Passwords are in the README.{" "}
+            <button
+              type="button"
+              className="text-hint hover:underline"
+              onClick={() => fill({ email: "grace@school.edu", password: "student-pass" })}
+            >
+              grace@school.edu
+            </button>{" "}
+            is a disabled student.
           </p>
-        ) : null}
-        <ol className="mt-10 grid grid-cols-2 gap-3 text-xs text-faint sm:grid-cols-4">
-          {["Upload", "Analyse", "Test", "Guide"].map((step, index) => (
-            <li key={step} className="rounded-lg border border-line px-3 py-2">
-              <span className="font-mono text-[10px] text-hint">0{index + 1}</span>
-              <p className="mt-1 text-mute">{step}</p>
-            </li>
-          ))}
-        </ol>
-      </main>
-    </div>
+        </div>
+      ) : null}
+    </AuthFrame>
   );
 }
