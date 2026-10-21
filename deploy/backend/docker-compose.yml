@@ -1,0 +1,56 @@
+# Backend only. MongoDB runs on its own instance. Nginx runs on the frontend.
+# Secrets are loaded from /opt/codelens/backend.env (gitignored, mode 600).
+# BACKEND_PRIVATE_IP is read from the shell for the host port binding.
+# Chroma and the Hugging Face cache survive image rebuilds on the host paths below.
+
+name: codelens-backend
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: codelens-api:prod
+    env_file:
+      - /opt/codelens/backend.env
+    environment:
+      CODELENS_KB: /data/chroma
+      CODELENS_LOW_MEMORY: "1"
+      HF_HOME: /cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /cache/huggingface
+      TRANSFORMERS_CACHE: /cache/huggingface
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      MALLOC_ARENA_MAX: "2"
+      CUDA_VISIBLE_DEVICES: ""
+      WEB_CONCURRENCY: "1"
+    volumes:
+      - /opt/codelens/data/chroma:/data/chroma
+      - /opt/codelens/cache/huggingface:/cache/huggingface
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "${BACKEND_PRIVATE_IP:?set BACKEND_PRIVATE_IP}:8000:8000"
+    restart: unless-stopped
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=8).read()",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s

@@ -315,7 +315,7 @@ users 1──* kb_pending   (proposed_by / reviewed_by)
 
 ## API
 
-Every route except `POST /auth/register` and `POST /auth/login` requires `Authorization: Bearer <token>`. The token is HS256, lasts 7 days, and carries `sub` and `role`. Role and the disabled flag are loaded from MongoDB on each request. A disabled account gets 403. Register always creates a student. A body that asks for `role: teacher` is 403. Teachers are created with `python -m rag_core.create_teacher`.
+Every route except `GET /`, `GET /health`, `POST /auth/register`, and `POST /auth/login` requires `Authorization: Bearer <token>`. The token is HS256, lasts 7 days, and carries `sub` and `role`. Role and the disabled flag are loaded from MongoDB on each request. A disabled account gets 403. Register always creates a student. A body that asks for `role: teacher` is 403. Teachers are created with `python -m rag_core.create_teacher`.
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
@@ -376,6 +376,10 @@ knowledge_base/            notes used when a student is debugging
 docker-compose.yml         MongoDB 7 on port 27017
 tests/                     auth, judgment, scoring, sandbox, schemas
 ```
+
+## AWS
+
+Production is three EC2 instances in one Mumbai VPC: Nginx and the Vite build on a public t3.micro, FastAPI and Chroma on a t3.small, and MongoDB on a private t3.micro. S3, CloudFront, and Atlas are lower-cost alternatives. The steps, the security-group table, the cost estimate, and the teardown are in [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).
 
 ## Team
 

@@ -4,7 +4,13 @@ venv/
 __pycache__/
 *.py[cod]
 .env
+.env.*
+!.env.example
 !frontend/.env
+!frontend/.env.example
+nginx.env
+codelens-network.txt
+codelens-key.pem
 env.txt
 *.db
 *.db-wal
