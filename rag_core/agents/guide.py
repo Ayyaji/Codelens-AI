@@ -38,7 +38,7 @@ def _practice_for(skill: str, roadmap: list[dict]) -> str:
     return f"Practise {skill} with one smaller question before retrying the test."
 
 
-def build_guidance(
+async def build_guidance(
     student_id: str,
     profile: dict,
     failure_explanation: str = "",
@@ -52,7 +52,7 @@ def build_guidance(
         topic = weak[0] if weak else "the next roadmap item"
         pattern_text = " ".join(patterns)
         query = f"I am practising {topic}. {pattern_text}".strip()
-        context = get_student_context(student_id)
+        context = await get_student_context(student_id)
         directive = judge_response_level(query, "guide", context, topic=topic if weak else None)
 
         steps = []

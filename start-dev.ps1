@@ -11,7 +11,50 @@ if (-not (Test-Path ".\venv\Scripts\python.exe")) {
 
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
-    Write-Host "Created .env. Set GROQ_API_KEY in that file before model calls will succeed."
+    Write-Host "Created .env. Set GROQ_API_KEY and JWT_SECRET in that file before model calls and shared logins will succeed."
+}
+
+function Add-EnvDefault($Name, $Value) {
+    if (-not (Select-String -Path ".env" -Pattern "^$Name=" -Quiet)) {
+        Add-Content -Path ".env" -Value "$Name=$Value"
+        Write-Host "Added $Name to .env"
+    }
+}
+
+Add-EnvDefault "MONGODB_URI" "mongodb://localhost:27017"
+Add-EnvDefault "MONGODB_DB" "codelens"
+Add-EnvDefault "JWT_SECRET" "change-me-to-a-long-random-string"
+
+function Test-MongoPort {
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $wait = $client.BeginConnect("127.0.0.1", 27017, $null, $null)
+        $opened = $wait.AsyncWaitHandle.WaitOne(500, $false)
+        if (-not $opened) { return $false }
+        $client.EndConnect($wait)
+        $client.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+if (-not (Test-MongoPort)) {
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        Write-Host "MongoDB is not on port 27017. Starting it with docker compose..."
+        docker compose up -d
+        foreach ($i in 1..20) {
+            Start-Sleep -Seconds 1
+            if (Test-MongoPort) { break }
+        }
+    }
+    if (-not (Test-MongoPort)) {
+        Write-Host "MongoDB is not listening on localhost:27017."
+        Write-Host "Install MongoDB Community Server (it listens on 27017 by default), or install Docker and run: docker compose up -d"
+        Write-Host "winget install MongoDB.Server"
+    }
+} else {
+    Write-Host "MongoDB is listening on localhost:27017"
 }
 
 $Kb = Join-Path $Root "codelens_kb"

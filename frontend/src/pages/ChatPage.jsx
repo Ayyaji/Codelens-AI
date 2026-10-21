@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ask } from "../api/client";
 import { DIRECTIVE_COPY, DirectiveBadge } from "../components/DirectiveBadge";
 import { ErrorBanner, LoadingLine, PageHeader, btn, field } from "../components/ui";
-import { useSession } from "../session";
 
 const ACCENT = {
   full: "border-l-full",
@@ -24,8 +23,8 @@ const STARTERS = [
 let turnId = 0;
 
 export function ChatPage() {
-  const { session } = useSession();
   const [query, setQuery] = useState("");
+  const [chatId, setChatId] = useState("");
   const [turns, setTurns] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,7 +38,8 @@ export function ChatPage() {
     const mine = { id: `u-${++turnId}`, role: "user", text: trimmed };
     setTurns((current) => [...current, mine]);
     try {
-      const data = await ask({ studentId: session.studentId, query: trimmed });
+      const data = await ask({ query: trimmed, chatId: chatId || undefined });
+      if (data.chat_id) setChatId(data.chat_id);
       setTurns((current) => [
         ...current,
         {

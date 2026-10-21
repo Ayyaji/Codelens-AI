@@ -1,23 +1,38 @@
-"""Create the CodeLens SQLite database."""
+"""Create the MongoDB indexes CodeLens expects.
 
-import sqlite3
+    python -m rag_core.init_db
 
-from rag_core.config import get_db_path
-from rag_core.db import init_db
+The API creates the same indexes on startup. This command is for a manual
+check, and for the database-design notes in the report.
+"""
+
+import asyncio
+
+from rag_core.config import mongo_db_name, mongo_uri as configured_uri
+from rag_core.mongo import close_mongo, get_db, ping
 
 
-def init_database():
-    """Create every table the judgment layer and the JD modules need."""
-    init_db()
-    print(f"Database ready at {get_db_path()}")
+async def init_database() -> None:
+    await ping()
+    db = await get_db()
+    print(f"MongoDB ready: {mongo_db_name()} at {configured_uri().split('@')[-1]}")
+    names = sorted(await db.list_collection_names())
+    print("Collections:")
+    for name in names:
+        info = await db[name].index_information()
+        indexes = ", ".join(sorted(info))
+        print(f"  {name}: {indexes}")
+
+
+def main() -> None:
+    async def _run() -> None:
+        try:
+            await init_database()
+        finally:
+            await close_mongo()
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
-    print("Initializing CodeLens AI database")
-    init_database()
-    conn = sqlite3.connect(get_db_path())
-    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
-    conn.close()
-    print("Tables:")
-    for (name,) in tables:
-        print(f"  {name}")
+    main()

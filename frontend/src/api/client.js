@@ -124,6 +124,26 @@ function normalizeSubmit(data) {
   };
 }
 
+export const TOKEN_STORAGE_KEY = "codelens.token";
+
+/** Bearer token written by the login screen. Arjun's auth pages should call setToken. */
+export function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    /* private mode and some embedded browsers block storage */
+  }
+}
+
 function normalizeAsk(data) {
   let answer = data?.answer;
   if (answer && typeof answer === "object") answer = answer.answer ?? "";
@@ -131,6 +151,7 @@ function normalizeAsk(data) {
     answer: asText(answer),
     agent_used: asText(data?.agent_used),
     directive: asText(data?.directive).trim().toLowerCase(),
+    chat_id: asText(data?.chat_id),
     student_id: data?.student_id,
     query: data?.query,
     response_time: data?.response_time,
@@ -140,6 +161,8 @@ function normalizeAsk(data) {
 
 async function request(path, { method = "GET", json, body } = {}) {
   const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   let payload = body;
   if (json !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -169,13 +192,27 @@ async function request(path, { method = "GET", json, body } = {}) {
   return data;
 }
 
-/** POST /ask is always live. It is not covered by the mock flag. */
-export async function ask({ studentId, query }) {
+/** POST /ask is always live. It is not covered by the mock flag. The student is the bearer token. */
+export async function ask({ query, chatId } = {}) {
+  const json = { query };
+  if (chatId) json.chat_id = chatId;
   const data = await request("/ask", {
     method: "POST",
-    json: { student_id: studentId, query },
+    json,
   });
   return normalizeAsk(data);
+}
+
+export async function registerAccount({ name, email, password }) {
+  const data = await request("/auth/register", { method: "POST", json: { name, email, password } });
+  if (data?.token) setToken(data.token);
+  return data;
+}
+
+export async function loginAccount({ email, password }) {
+  const data = await request("/auth/login", { method: "POST", json: { email, password } });
+  if (data?.token) setToken(data.token);
+  return data;
 }
 
 export async function uploadJd({ file, text }) {
@@ -210,12 +247,12 @@ export async function generateTest(jdId) {
   return { jd_id: asText(data?.jd_id || jdId), questions };
 }
 
-export async function submitTest({ studentId, jdId, answers }) {
+export async function submitTest({ jdId, answers }) {
   const data = mockEnabled("submit")
     ? await mockSubmit()
     : await request("/test/submit", {
         method: "POST",
-        json: { student_id: studentId, jd_id: jdId, answers },
+        json: { jd_id: jdId, answers },
       });
   return normalizeSubmit(data);
 }

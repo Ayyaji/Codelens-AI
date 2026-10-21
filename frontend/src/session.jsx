@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { setToken } from "./api/client";
 
 const KEY = "codelens.session.v1";
 const TEST_MS = 20 * 60 * 1000;
@@ -40,6 +41,7 @@ export function SessionProvider({ children }) {
         setSession((current) => ({ ...current, studentId }));
       },
       logout() {
+        setToken("");
         sessionStorage.removeItem(KEY);
         setSession(empty);
       },

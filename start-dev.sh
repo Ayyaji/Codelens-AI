@@ -14,7 +14,41 @@ python -m pip install -r requirements.txt
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "Created .env. Set GROQ_API_KEY in that file before model calls will succeed."
+  echo "Created .env. Set GROQ_API_KEY and JWT_SECRET in that file before model calls and shared logins will succeed."
+fi
+
+ensure_env() {
+  local name="$1" value="$2"
+  if ! grep -q "^${name}=" .env; then
+    echo "${name}=${value}" >> .env
+    echo "Added ${name} to .env"
+  fi
+}
+ensure_env MONGODB_URI "mongodb://localhost:27017"
+ensure_env MONGODB_DB codelens
+ensure_env JWT_SECRET change-me-to-a-long-random-string
+
+mongo_up() {
+  (echo >/dev/tcp/127.0.0.1/27017) >/dev/null 2>&1
+}
+
+if ! mongo_up; then
+  if command -v docker >/dev/null 2>&1; then
+    echo "MongoDB is not on port 27017. Starting it with docker compose..."
+    docker compose up -d || true
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      if mongo_up; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+  if ! mongo_up; then
+    echo "MongoDB is not listening on localhost:27017."
+    echo "Install MongoDB Community Server, or run: docker compose up -d"
+  fi
+else
+  echo "MongoDB is listening on localhost:27017"
 fi
 
 if [[ ! -d codelens_kb ]]; then

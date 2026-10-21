@@ -1,9 +1,6 @@
-"""HTTP contract for the two modules. The model is replaced with a stub."""
+"""HTTP contract for JD upload, tests, and guidance. The model is replaced with a stub."""
 
-import pytest
-from fastapi.testclient import TestClient
-
-from rag_core.api import app
+from tests.conftest import register
 
 SKILLS = {
     "skills": [
@@ -60,12 +57,6 @@ QUESTIONS = {
 }
 
 
-@pytest.fixture
-def client():
-    with TestClient(app) as test_client:
-        yield test_client
-
-
 def _stub_model(monkeypatch):
     calls = {"parse": 0, "questions": 0, "explain": 0}
 
@@ -88,50 +79,62 @@ def _stub_model(monkeypatch):
     return calls
 
 
-def test_ask_returns_answer_agent_and_directive(client, monkeypatch):
-    monkeypatch.setattr(
-        "rag_core.api.run_pipeline",
-        lambda query, student_id="anonymous", profile=False: {
+async def test_ask_returns_answer_agent_directive_and_chat(client, monkeypatch):
+    async def fake(query, student_id="anonymous", profile=False):
+        return {
             "query": query,
             "agent_used": "debug",
             "answer": "Define x before you use it.",
             "directive": "hint",
             "response_time": 0.2,
-        },
-    )
-    response = client.post("/ask", json={"student_id": "s1", "query": "NameError on x"})
+        }
+
+    monkeypatch.setattr("rag_core.api.run_pipeline", fake)
+    _, headers = await register(client)
+    response = await client.post("/ask", json={"student_id": "someone-else", "query": "NameError on x"}, headers=headers)
     assert response.status_code == 200
     body = response.json()
+    assert set(body) == {"answer", "agent_used", "directive", "chat_id"}
     assert body["answer"] == "Define x before you use it."
     assert body["agent_used"] == "debug"
     assert body["directive"] == "hint"
 
+    saved = await client.get(f"/me/chats/{body['chat_id']}", headers=headers)
+    assert saved.status_code == 200
+    messages = saved.json()["messages"]
+    assert [item["role"] for item in messages] == ["user", "assistant"]
+    assert messages[1]["directive"] == "hint"
+    assert messages[1]["agent_used"] == "debug"
 
-def test_ask_rejects_a_blank_query(client):
-    response = client.post("/ask", json={"student_id": "s1", "query": " "})
+
+async def test_ask_rejects_a_blank_query(client):
+    _, headers = await register(client)
+    response = await client.post("/ask", json={"query": " "}, headers=headers)
     assert response.status_code == 422
 
 
-def test_jd_test_flow_caches_the_model_and_hides_the_answer_key(client, monkeypatch):
+async def test_jd_test_flow_caches_the_model_and_hides_the_answer_key(client, monkeypatch):
     calls = _stub_model(monkeypatch)
-    uploaded = client.post(
+    _, headers = await register(client)
+    uploaded = await client.post(
         "/jd/upload",
         json={"text": "We need a Python developer who writes SQL every day."},
+        headers=headers,
     )
     assert uploaded.status_code == 200
     jd_id = uploaded.json()["jd_id"]
     assert set(uploaded.json()) == {"jd_id"}
 
-    first = client.get(f"/jd/analyse/{jd_id}")
-    second = client.get(f"/jd/analyse/{jd_id}")
+    first = await client.get(f"/jd/analyse/{jd_id}", headers=headers)
+    second = await client.get(f"/jd/analyse/{jd_id}", headers=headers)
     assert first.status_code == 200
     assert first.json()["skills"][0]["name"] == "SQL"
     assert "roadmap" in first.json()
     assert second.json() == first.json()
     assert calls["parse"] == 1
 
-    generated = client.post("/test/generate", json={"jd_id": jd_id})
-    again = client.post("/test/generate", json={"jd_id": jd_id})
+    generated = await client.post("/test/generate", json={"jd_id": jd_id}, headers=headers)
+    again = await client.post("/test/generate", json={"jd_id": jd_id}, headers=headers)
     assert generated.status_code == 200
     body = generated.json()
     assert body["jd_id"] == jd_id
@@ -144,19 +147,20 @@ def test_jd_test_flow_caches_the_model_and_hides_the_answer_key(client, monkeypa
     assert "hidden-secret" not in str(body)
     assert coding["sample_output"] == "ok"
 
-    missing = client.get("/jd/analyse/does-not-exist")
+    missing = await client.get("/jd/analyse/does-not-exist", headers=headers)
     assert missing.status_code == 404
 
-    submitted = client.post(
+    submitted = await client.post(
         "/test/submit",
         json={
-            "student_id": "s1",
+            "student_id": "someone-else",
             "jd_id": jd_id,
             "answers": [
                 {"question_id": "q1", "selected": "SELECT"},
                 {"question_id": "c1", "code": "import sys\nprint(sys.stdin.read().strip())\n"},
             ],
         },
+        headers=headers,
     )
     assert submitted.status_code == 200
     result = submitted.json()
@@ -167,62 +171,89 @@ def test_jd_test_flow_caches_the_model_and_hides_the_answer_key(client, monkeypa
     assert "WHERE filters rows." in result["guidance"]["message"]
     assert calls["explain"] == 1
 
+    persona = await client.get("/me/persona", headers=headers)
+    assert persona.status_code == 200
+    assert persona.json()["weak_topics"] == ["SQL"]
+    assert persona.json()["scores"][0]["score"] == 50.0
+    history = await client.get("/me/history", headers=headers)
+    assert history.json()["tests"][0]["score"] == 50.0
+    assert {item["jd_id"] for item in history.json()["jds"]} == {jd_id}
 
-def test_run_returns_stdout_and_stderr(client):
-    response = client.post("/run", json={"code": "print(1 + 1)", "language": "python"})
+
+async def test_run_returns_stdout_and_stderr(client):
+    _, headers = await register(client)
+    response = await client.post("/run", json={"code": "print(1 + 1)", "language": "python"}, headers=headers)
     assert response.status_code == 200
     assert response.json() == {"stdout": "2\n", "stderr": ""}
 
 
-def test_run_feeds_sample_stdin(client):
-    response = client.post(
+async def test_run_feeds_sample_stdin(client):
+    _, headers = await register(client)
+    response = await client.post(
         "/run",
         json={
             "code": "print(int(input()) * 2)",
             "language": "python",
             "stdin": "2\n",
         },
+        headers=headers,
     )
     assert response.status_code == 200
     assert response.json() == {"stdout": "4\n", "stderr": ""}
 
 
-def test_cors_allows_the_vite_dev_origin(client):
-    live = client.get("/", headers={"Origin": "http://localhost:5173"})
+async def test_cors_allows_the_vite_dev_origin(client):
+    live = await client.get("/", headers={"Origin": "http://localhost:5173"})
     assert live.headers["access-control-allow-origin"] in {"*", "http://localhost:5173"}
 
-    preflight = client.options(
+    preflight = await client.options(
         "/jd/upload",
         headers={
             "Origin": "http://127.0.0.1:5173",
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "content-type",
+            "Access-Control-Request-Headers": "content-type,authorization",
         },
     )
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] in {"*", "http://127.0.0.1:5173"}
     assert "POST" in preflight.headers["access-control-allow-methods"]
+    allowed = preflight.headers["access-control-allow-headers"]
+    assert "authorization" in allowed.lower()
 
 
-def test_text_file_upload(client, monkeypatch):
+async def test_text_file_upload(client, monkeypatch):
     _stub_model(monkeypatch)
-    response = client.post(
+    _, headers = await register(client)
+    response = await client.post(
         "/jd/upload",
         files={"file": ("role.txt", b"Python and SQL for the backend role.", "text/plain")},
+        headers=headers,
     )
     assert response.status_code == 200
     assert response.json()["jd_id"]
 
 
-def test_submit_before_generate_is_404(client, monkeypatch):
+async def test_submit_before_generate_is_404(client, monkeypatch):
     _stub_model(monkeypatch)
-    uploaded = client.post("/jd/upload", json={"text": "Python developer"})
+    _, headers = await register(client)
+    uploaded = await client.post("/jd/upload", json={"text": "Python developer"}, headers=headers)
     jd_id = uploaded.json()["jd_id"]
-    response = client.post(
+    response = await client.post(
         "/test/submit",
-        json={"student_id": "s1", "jd_id": jd_id, "answers": [{"question_id": "q1", "selected": "A"}]},
+        json={"jd_id": jd_id, "answers": [{"question_id": "q1", "selected": "A"}]},
+        headers=headers,
     )
     assert response.status_code == 404
+
+
+async def test_another_student_cannot_read_the_job_description(client, monkeypatch):
+    _stub_model(monkeypatch)
+    _, owner = await register(client, email="owner@example.com")
+    _, other = await register(client, email="other@example.com", name="Other")
+    uploaded = await client.post("/jd/upload", json={"text": "Python developer who writes SQL."}, headers=owner)
+    jd_id = uploaded.json()["jd_id"]
+    assert (await client.get(f"/jd/analyse/{jd_id}", headers=other)).status_code == 404
+    assert (await client.post("/test/generate", json={"jd_id": jd_id}, headers=other)).status_code == 404
 
 
 def test_router_skips_the_model_for_bugs_and_hints(monkeypatch):

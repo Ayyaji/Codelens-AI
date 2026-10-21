@@ -1,20 +1,19 @@
 """CodeLens AI HTTP API.
 
-Two modules share this app:
-
-1. JD understanding — upload a job description, then read the skills and roadmap.
-2. Test and guide — generate a test, run code, submit answers, and receive a score,
-   weak topics, and judgment-based guidance.
-
-POST /ask stays the guidance chat. Debugging help is one of the agents it can route to.
+Accounts, chats, personas, job descriptions, tests, and the knowledge-base
+queue are stored in MongoDB. Chroma remains the vector index. Student routes
+use the bearer token's user. Teacher routes are the only way a proposed note
+is written into that index.
 """
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo.errors import DuplicateKeyError
 
 from rag_core.agents.diagnoser import diagnose
 from rag_core.agents.evaluator import evaluate_questions
@@ -22,25 +21,67 @@ from rag_core.agents.guide import build_guidance
 from rag_core.agents.jd_analyser import analyse_jd, extract_text, store_jd
 from rag_core.agents.question_gen import generate_questions, load_questions
 from rag_core.agents.retrieval import warm_retrieval
-from rag_core.db import connection, init_db
+from rag_core.auth import (
+    create_token,
+    current_teacher,
+    current_user,
+    hash_password,
+    public_user,
+    verify_password,
+    warn_default_secret,
+)
 from rag_core.judgment import extract_error_type
-from rag_core.kb_update import approve_item, get_pending_items, reject_item
+from rag_core.kb_update import approve_pending, edit_pending, pending_items, reject_pending
 from rag_core.llm import init_clients
+from rag_core.mongo import close_mongo, ping
 from rag_core.pipeline import run_pipeline
 from rag_core.sandbox.runner import run_code
 from rag_core.schemas import (
+    ActivityItem,
     AskRequest,
     AskResponse,
+    AuthResponse,
+    ChatDetail,
+    ChatSummary,
+    DisableRequest,
     GenerateTestRequest,
     GenerateTestResponse,
+    HistoryResponse,
     JDAnalysisResponse,
     JDUploadResponse,
+    KBEdit,
+    KBItem,
+    LoginRequest,
+    OverviewResponse,
+    PersonaResponse,
+    RegisterRequest,
+    ResetResponse,
     RunRequest,
     RunResponse,
+    StudentDetail,
+    StudentSummary,
     SubmitTestRequest,
     SubmitTestResponse,
+    UserPublic,
 )
 from rag_core.session_logger import log_session
+from rag_core.store import (
+    activity_feed,
+    add_activity,
+    chat_detail,
+    create_user,
+    find_user_by_email,
+    history_view,
+    list_chats,
+    persona_view,
+    save_turn,
+    set_disabled,
+    student_detail,
+    student_row,
+    student_rows,
+    teacher_overview,
+    wipe_student,
+)
 
 logger = logging.getLogger("codelens.api")
 MAX_UPLOAD_BYTES = 2_000_000
@@ -56,29 +97,29 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
-    init_db()
+    warn_default_secret()
+    await ping()
     init_clients()
     warm_retrieval()
     yield
+    await close_mongo()
 
 
 app = FastAPI(
     title="CodeLens AI",
     description=(
         "Adaptive RAG assistant for JD-based interview readiness. "
-        "Upload a job description to get each requirement explained and a study roadmap, "
-        "then take a generated test. MCQs are scored in code, coding answers run in a "
-        "sandbox, and guidance follows the full / hint / gentle / break judgment layer. "
-        "Debugging help remains available through POST /ask."
+        "Students register, upload a job description, and practise against it. "
+        "Teachers review the class and approve anything before it enters the knowledge base."
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
 # The Vite dev server is http://localhost:5173 (`npm run dev`) and
 # http://localhost:4173 (`npm run preview`). 127.0.0.1 is listed too, because
 # Windows browsers sometimes open that host instead of localhost. "*" keeps
-# any other client, including the earlier student portal, able to call the API.
+# any other client able to call the API. Bearer tokens are headers, not cookies.
 VITE_DEV_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -95,30 +136,103 @@ app.add_middleware(
 )
 
 
+def _text_answer(answer) -> str:
+    if isinstance(answer, dict):
+        answer = answer.get("answer", "")
+    text = "" if answer is None else str(answer)
+    return text or "No answer found"
+
+
+def _auth_response(user: dict, token: str) -> AuthResponse:
+    return AuthResponse(token=token, user=UserPublic(**public_user(user)))
+
+
 @app.get("/")
 def root():
     return {
         "message": "CodeLens AI is running",
         "description": "Adaptive RAG assistant for JD-based interview readiness",
-        "modules": ["jd_understanding", "test_and_guide"],
+        "modules": ["auth", "jd_understanding", "test_and_guide", "teacher"],
     }
 
 
+@app.post("/auth/register", response_model=AuthResponse, tags=["auth"])
+async def register(body: RegisterRequest):
+    if body.role == "teacher":
+        raise HTTPException(status_code=403, detail="Teachers cannot self-register")
+    existing = await find_user_by_email(body.email)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+    try:
+        user = await create_user(body.name, body.email, await hash_password(body.password), role="student")
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="Email is already registered") from None
+    user_id = str(user["_id"])
+    await add_activity(user_id, "register", {})
+    return _auth_response(user, create_token(user_id, "student"))
+
+
+@app.post("/auth/login", response_model=AuthResponse, tags=["auth"])
+async def login(body: LoginRequest):
+    user = await find_user_by_email(body.email)
+    if user is None or not await verify_password(body.password, user.get("password_hash") or ""):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("disabled"):
+        raise HTTPException(status_code=403, detail="Account disabled")
+    user_id = str(user["_id"])
+    await add_activity(user_id, "login", {})
+    return _auth_response(user, create_token(user_id, user["role"]))
+
+
+@app.get("/auth/me", response_model=UserPublic, tags=["auth"])
+async def me(user: dict = Depends(current_user)):
+    return UserPublic(**public_user(user))
+
+
 @app.post("/ask", response_model=AskResponse, tags=["guidance"])
-def ask(request: AskRequest):
-    result = run_pipeline(request.query, student_id=request.student_id, profile=request.profile)
-    answer = result["answer"]
-    if isinstance(answer, dict):
-        answer = answer.get("answer", "No answer found")
+async def ask(body: AskRequest, user: dict = Depends(current_user)):
+    result = await run_pipeline(body.query, student_id=user["id"])
+    answer = _text_answer(result.get("answer"))
+    try:
+        chat_id = await save_turn(
+            user["id"],
+            body.chat_id,
+            body.query,
+            answer,
+            result["directive"],
+            result["agent_used"],
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Chat not found") from None
     return AskResponse(
-        student_id=request.student_id,
-        query=result["query"],
-        agent_used=result["agent_used"],
         answer=answer,
+        agent_used=result["agent_used"],
         directive=result["directive"],
-        response_time=result.get("response_time", 0),
-        profiling=result.get("profiling"),
+        chat_id=chat_id,
     )
+
+
+@app.get("/me/chats", response_model=list[ChatSummary], tags=["me"])
+async def my_chats(user: dict = Depends(current_user)):
+    return await list_chats(user["id"])
+
+
+@app.get("/me/chats/{chat_id}", response_model=ChatDetail, tags=["me"])
+async def my_chat(chat_id: str, user: dict = Depends(current_user)):
+    detail = await chat_detail(user["id"], chat_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return detail
+
+
+@app.get("/me/persona", response_model=PersonaResponse, tags=["me"])
+async def my_persona(user: dict = Depends(current_user)):
+    return await persona_view(user["id"])
+
+
+@app.get("/me/history", response_model=HistoryResponse, tags=["me"])
+async def my_history(user: dict = Depends(current_user)):
+    return await history_view(user["id"])
 
 
 async def _read_upload(request: Request) -> tuple[bytes, str]:
@@ -145,29 +259,32 @@ async def _read_upload(request: Request) -> tuple[bytes, str]:
 
 
 @app.post("/jd/upload", response_model=JDUploadResponse, tags=["jd"])
-async def upload_jd(request: Request):
+async def upload_jd(request: Request, user: dict = Depends(current_user)):
     raw, filename = await _read_upload(request)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File is too large")
     try:
         text = extract_text(raw, filename)
-        jd_id = store_jd(text, filename)
+        jd_id = await store_jd(text, filename, user["id"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("jd upload failed")
         raise HTTPException(status_code=400, detail="Could not read that job description") from exc
+    await add_activity(user["id"], "jd_upload", {"jd_id": jd_id, "filename": filename})
     return JDUploadResponse(jd_id=jd_id)
 
 
 @app.get("/jd/analyse/{jd_id}", response_model=JDAnalysisResponse, tags=["jd"])
-def analyse(jd_id: str):
+async def analyse(jd_id: str, user: dict = Depends(current_user)):
     try:
-        return analyse_jd(jd_id)
+        result = await analyse_jd(jd_id, user["id"])
     except LookupError:
         raise HTTPException(status_code=404, detail="Job description not found") from None
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await add_activity(user["id"], "jd_analyse", {"jd_id": jd_id})
+    return result
 
 
 @app.post(
@@ -176,49 +293,76 @@ def analyse(jd_id: str):
     response_model_exclude_none=True,
     tags=["test"],
 )
-def generate_test(body: GenerateTestRequest):
+async def generate_test(body: GenerateTestRequest, user: dict = Depends(current_user)):
     try:
-        return generate_questions(body.jd_id)
+        generated = await generate_questions(body.jd_id, user["id"])
     except LookupError:
         raise HTTPException(status_code=404, detail="Job description not found") from None
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await add_activity(
+        user["id"],
+        "test_generate",
+        {"jd_id": body.jd_id, "questions": len(generated.get("questions") or [])},
+    )
+    return generated
 
 
 @app.post("/run", response_model=RunResponse, tags=["test"])
-def run(body: RunRequest):
-    result = run_code(body.code, language=body.language, stdin=body.stdin)
+async def run(body: RunRequest, user: dict = Depends(current_user)):
+    result = await asyncio.to_thread(run_code, body.code, body.language, body.stdin)
+    await add_activity(
+        user["id"],
+        "run",
+        {"language": body.language, "code_chars": len(body.code)},
+    )
     return RunResponse(stdout=result["stdout"], stderr=result["stderr"])
 
 
 @app.post("/test/submit", response_model=SubmitTestResponse, tags=["test"])
-def submit_test(body: SubmitTestRequest):
+async def submit_test(body: SubmitTestRequest, user: dict = Depends(current_user)):
     started = time.perf_counter()
-    questions = load_questions(body.jd_id)
+    try:
+        questions = await load_questions(body.jd_id, user["id"])
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Job description not found") from None
     if questions is None:
         raise HTTPException(status_code=404, detail="Generate a test for this job description first")
 
-    report = evaluate_questions(questions, [answer.model_dump() for answer in body.answers])
-    profile = diagnose(body.student_id, body.jd_id, report["results"], report["score"])
+    report = await asyncio.to_thread(
+        evaluate_questions,
+        questions,
+        [answer.model_dump() for answer in body.answers],
+    )
+    profile = await diagnose(
+        user["id"],
+        body.jd_id,
+        report["results"],
+        report["score"],
+        answers=[answer.model_dump() for answer in body.answers],
+    )
     try:
-        roadmap = analyse_jd(body.jd_id)["roadmap"]
+        roadmap = (await analyse_jd(body.jd_id, user["id"]))["roadmap"]
     except (LookupError, RuntimeError):
         roadmap = []
-    guidance = build_guidance(
-        student_id=body.student_id,
+    guidance = await build_guidance(
+        student_id=user["id"],
         profile=profile,
         failure_explanation=report["failure_explanation"],
         roadmap=roadmap,
     )
     topic = profile["weak_topics"][0] if profile["weak_topics"] else None
     pattern = profile["mistake_patterns"][0] if profile["mistake_patterns"] else ""
-    log_session(
-        student_id=body.student_id,
+    await log_session(
+        student_id=user["id"],
         query=f"Interview practice. {topic or 'review'} {pattern}".strip(),
         agent_used="guide",
         response_time=round(time.perf_counter() - started, 3),
         error_type=extract_error_type(pattern) if pattern else None,
         topic=topic,
+        activity_type="test_submit",
+        directive=guidance["directive"],
+        extra={"score": report["score"], "jd_id": body.jd_id, "test_id": profile.get("test_id")},
     )
     return SubmitTestResponse(
         score=report["score"],
@@ -227,60 +371,118 @@ def submit_test(body: SubmitTestRequest):
     )
 
 
-@app.get("/pending-kb", tags=["knowledge-base"])
-def pending_kb():
-    items = get_pending_items()
-    return {
-        "count": len(items),
-        "items": [
-            {
-                "id": item[0],
-                "query": item[1],
-                "content": item[2],
-                "source": item[3],
-                "timestamp": item[4],
-                "status": item[5],
-            }
-            for item in items
-        ],
-    }
+@app.get("/teacher/overview", response_model=OverviewResponse, tags=["teacher"])
+async def overview(teacher: dict = Depends(current_teacher)):
+    del teacher
+    return await teacher_overview()
 
 
-@app.post("/approve-kb/{item_id}", tags=["knowledge-base"])
-def approve_kb(item_id: int):
-    success = approve_item(item_id)
-    return {
-        "message": f"Item {item_id} {'approved and added to KB' if success else 'not found'}"
-    }
+@app.get("/teacher/students", response_model=list[StudentSummary], tags=["teacher"])
+async def students(teacher: dict = Depends(current_teacher)):
+    del teacher
+    return await student_rows()
 
 
-@app.post("/reject-kb/{item_id}", tags=["knowledge-base"])
-def reject_kb(item_id: int):
-    reject_item(item_id)
-    return {"message": f"Item {item_id} rejected"}
+@app.get("/teacher/students/{student_id}", response_model=StudentDetail, tags=["teacher"])
+async def student(student_id: str, teacher: dict = Depends(current_teacher)):
+    del teacher
+    detail = await student_detail(student_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return detail
 
 
-@app.get("/sessions", tags=["guidance"])
-def get_sessions():
-    init_db()
-    with connection() as conn:
-        rows = [
-            tuple(row)
-            for row in conn.execute("SELECT * FROM sessions ORDER BY timestamp DESC").fetchall()
-        ]
-    return {
-        "count": len(rows),
-        "sessions": [
-            {
-                "id": row[0],
-                "student_id": row[1],
-                "query": row[2],
-                "agent_used": row[3],
-                "response_time": row[4],
-                "timestamp": row[5],
-                "error_type": row[6] if len(row) > 6 else None,
-                "topic": row[7] if len(row) > 7 else None,
-            }
-            for row in rows
-        ],
-    }
+@app.get("/teacher/students/{student_id}/chats", response_model=list[ChatSummary], tags=["teacher"])
+async def student_chats(student_id: str, teacher: dict = Depends(current_teacher)):
+    del teacher
+    if await student_detail(student_id) is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return await list_chats(student_id)
+
+
+@app.get(
+    "/teacher/students/{student_id}/chats/{chat_id}",
+    response_model=ChatDetail,
+    tags=["teacher"],
+)
+async def student_chat(student_id: str, chat_id: str, teacher: dict = Depends(current_teacher)):
+    del teacher
+    if await student_detail(student_id) is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    detail = await chat_detail(student_id, chat_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return detail
+
+
+@app.patch("/teacher/students/{student_id}", response_model=StudentSummary, tags=["teacher"])
+async def patch_student(student_id: str, body: DisableRequest, teacher: dict = Depends(current_teacher)):
+    if not await set_disabled(student_id, body.disabled):
+        raise HTTPException(status_code=404, detail="Student not found")
+    await add_activity(
+        student_id,
+        "account",
+        {"action": "disabled" if body.disabled else "enabled", "by": teacher["id"]},
+    )
+    row = await student_row(student_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return row
+
+
+@app.post("/teacher/students/{student_id}/reset", response_model=ResetResponse, tags=["teacher"])
+async def reset_student(student_id: str, teacher: dict = Depends(current_teacher)):
+    if await student_detail(student_id) is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    await wipe_student(student_id)
+    await add_activity(student_id, "account", {"action": "reset", "by": teacher["id"]})
+    return ResetResponse(id=student_id, reset=True)
+
+
+@app.get("/teacher/activity", response_model=list[ActivityItem], tags=["teacher"])
+async def teacher_activity(
+    limit: int = Query(default=50, ge=1, le=200),
+    teacher: dict = Depends(current_teacher),
+):
+    del teacher
+    return await activity_feed(limit)
+
+
+@app.get("/teacher/kb/pending", response_model=list[KBItem], tags=["teacher"])
+async def teacher_pending_kb(teacher: dict = Depends(current_teacher)):
+    del teacher
+    return await pending_items()
+
+
+@app.put("/teacher/kb/{item_id}", response_model=KBItem, tags=["teacher"])
+async def teacher_edit_kb(item_id: str, body: KBEdit, teacher: dict = Depends(current_teacher)):
+    del teacher
+    try:
+        return await edit_pending(item_id, body.content)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Pending item not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/teacher/kb/{item_id}/approve", response_model=KBItem, tags=["teacher"])
+async def teacher_approve_kb(item_id: str, teacher: dict = Depends(current_teacher)):
+    try:
+        return await approve_pending(item_id, teacher["id"])
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Pending item not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("knowledge base approval failed")
+        raise HTTPException(status_code=502, detail="Could not write to the knowledge base") from exc
+
+
+@app.post("/teacher/kb/{item_id}/reject", response_model=KBItem, tags=["teacher"])
+async def teacher_reject_kb(item_id: str, teacher: dict = Depends(current_teacher)):
+    try:
+        return await reject_pending(item_id, teacher["id"])
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Pending item not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

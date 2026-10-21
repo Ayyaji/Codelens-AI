@@ -17,24 +17,32 @@ from rag_core.schemas import (
 )
 
 
-def test_ask_requires_student_and_query():
+def test_ask_requires_a_query_and_ignores_a_client_student_id():
     with pytest.raises(ValidationError):
-        AskRequest.model_validate({"student_id": "s1"})
+        AskRequest.model_validate({})
     with pytest.raises(ValidationError):
-        AskRequest(student_id="s1", query="   ")
-    parsed = AskRequest(student_id=" s1 ", query=" Why IndexError? ")
-    assert parsed.student_id == "s1"
+        AskRequest(query="   ")
+    parsed = AskRequest.model_validate(
+        {"student_id": " s1 ", "query": " Why IndexError? ", "chat_id": "  "}
+    )
     assert parsed.query == "Why IndexError?"
+    assert parsed.chat_id is None
+    assert not hasattr(parsed, "student_id")
 
 
 def test_ask_response_carries_the_guidance_contract():
-    response = AskResponse(answer="Define it first.", agent_used="debug", directive="hint")
+    response = AskResponse(
+        answer="Define it first.",
+        agent_used="debug",
+        directive="hint",
+        chat_id="abc",
+    )
     dumped = response.model_dump()
+    assert set(dumped) == {"answer", "agent_used", "directive", "chat_id"}
     assert dumped["answer"] == "Define it first."
-    assert dumped["agent_used"] == "debug"
     assert dumped["directive"] == "hint"
     with pytest.raises(ValidationError):
-        AskResponse(answer="x", agent_used="debug", directive="FULL")
+        AskResponse(answer="x", agent_used="debug", directive="FULL", chat_id="abc")
 
 
 def test_run_contract_is_stdout_and_stderr_only():
@@ -51,6 +59,11 @@ def test_run_contract_is_stdout_and_stderr_only():
 def test_submit_contract():
     with pytest.raises(ValidationError):
         SubmitTestRequest.model_validate({"student_id": "s", "jd_id": "j"})
+    parsed = SubmitTestRequest.model_validate(
+        {"student_id": "ignored", "jd_id": " j ", "answers": [{"question_id": "q1", "selected": "A"}]}
+    )
+    assert parsed.jd_id == "j"
+    assert not hasattr(parsed, "student_id")
     response = SubmitTestResponse(
         score=50,
         weak_topics=["SQL"],

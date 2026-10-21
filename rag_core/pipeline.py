@@ -11,6 +11,7 @@ from rag_core.kb_update import stage_for_approval
 from rag_core.profiler import profiler, reset_profiler
 from rag_core.router import route_query
 from rag_core.session_logger import log_session
+from rag_core.store import note_chat
 
 
 class _no_measure:
@@ -21,7 +22,7 @@ class _no_measure:
         return False
 
 
-def run_pipeline(query: str, student_id: str = "anonymous", profile: bool = False) -> dict:
+async def run_pipeline(query: str, student_id: str = "anonymous", profile: bool = False) -> dict:
     """Answer one guidance question and record the turn."""
     started = time.perf_counter()
     if profile:
@@ -31,7 +32,7 @@ def run_pipeline(query: str, student_id: str = "anonymous", profile: bool = Fals
         agent_name = route_query(query)
 
     with profiler.measure("2. Get student context") if profile else _no_measure():
-        context = get_student_context(student_id)
+        context = await get_student_context(student_id)
 
     with profiler.measure("3. Judge response level") if profile else _no_measure():
         directive = judge_response_level(query, agent_name, context)
@@ -54,21 +55,24 @@ def run_pipeline(query: str, student_id: str = "anonymous", profile: bool = Fals
         with profiler.measure("4d. Web agent") if profile else _no_measure():
             result = web_agent(query)
             if result["raw_content"]:
-                stage_for_approval(
+                await stage_for_approval(
                     query=query,
                     content=result["raw_content"],
                     source=result["source"],
+                    proposed_by=student_id,
                 )
             answer = result["answer"]
 
     elapsed = round(time.perf_counter() - started, 3)
     with profiler.measure("5. Log session") if profile else _no_measure():
-        log_session(
+        await log_session(
             student_id=student_id,
             query=query,
             agent_used=agent_name,
             response_time=elapsed,
+            directive=directive,
         )
+        await note_chat(student_id, query, directive, agent_name)
 
     result = {
         "query": query,

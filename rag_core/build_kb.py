@@ -1,4 +1,9 @@
-"""Build the local knowledge base used when a student asks for debugging help."""
+"""Build the local knowledge base used when a student asks for debugging help.
+
+This seeds Chroma from the project's own notes in ``knowledge_base/``. It is
+not a student or web proposal. Those wait in ``kb_pending`` until a teacher
+approves them.
+"""
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import TextLoader
