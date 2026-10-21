@@ -25,8 +25,16 @@ def get_embeddings():
     if _embeddings is None:
         from langchain_huggingface import HuggingFaceEmbeddings
 
-        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        logger.info("built embedding client model=%s", EMBEDDING_MODEL)
+        # CODELENS_LOW_MEMORY=1 is set in the production image. batch_size 1
+        # keeps the encode step from allocating a large tensor on a 1–2 GiB
+        # instance. The vectors match the default encoder; only the batch changes.
+        kwargs = {"model_name": EMBEDDING_MODEL}
+        low_memory = os.getenv("CODELENS_LOW_MEMORY") == "1"
+        if low_memory:
+            kwargs["model_kwargs"] = {"device": "cpu"}
+            kwargs["encode_kwargs"] = {"batch_size": 1}
+        _embeddings = HuggingFaceEmbeddings(**kwargs)
+        logger.info("built embedding client model=%s low_memory=%s", EMBEDDING_MODEL, low_memory)
     return _embeddings
 
 

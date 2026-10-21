@@ -137,9 +137,11 @@ async def close_mongo() -> None:
         _indexes_ready = False
 
 
-async def ping() -> None:
+async def ping(*, quiet: bool = False) -> None:
     db = await get_db()
     await db.command("ping")
+    if quiet:
+        return
     from rag_core.config import mongo_db_name
 
     logger.info("mongodb ready db=%s", mongo_db_name())

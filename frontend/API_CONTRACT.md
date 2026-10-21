@@ -2,7 +2,7 @@
 
 The React client calls the FastAPI app. Paths below match `rag_core/schemas.py` and `rag_core/api.py`.
 
-Base URL: `VITE_API_URL` (no path prefix, no trailing slash). When the variable is missing the client uses `http://localhost:8000`. The browser sends requests directly. CORS allows the Vite dev origin (`http://localhost:5173` and `http://127.0.0.1:5173`, plus the preview port 4173) and any other origin. Send the access token as a header, not a cookie:
+Base URL: `VITE_API_URL` (no trailing slash). When the variable is missing the client uses `http://localhost:8000`. The three-server deploy sets it to the relative path `/api`: Nginx on the frontend forwards `/api/...` to FastAPI, so the browser stays on one origin. An S3 build sets it to the absolute HTTPS origin of the API instead, and `CORS_ORIGINS` on the API must list that site. With `CORS_ORIGINS` unset, any origin is allowed. The Vite dev origins stay allowed when `CORS_ORIGINS` is set, so a local client can call a deployed API. Send the access token as a header, not a cookie:
 
 ```http
 Authorization: Bearer <token>
@@ -12,7 +12,7 @@ Authorization: Bearer <token>
 
 Errors are FastAPI's `{"detail": "<message>"}`. `detail` may be a string or a validation list. The client surfaces it as text. Statuses in use include 400, 401 (missing or bad token), 403 (disabled account, or a student calling a teacher route), 404, 409 (duplicate email, or a knowledge-base item that is no longer pending), 413, 422, and 502.
 
-Every route except `POST /auth/register`, `POST /auth/login`, and `GET /` requires the bearer token. The server uses the token's user. A `student_id` in the body is ignored. Teachers cannot self-register; create them with `python -m rag_core.create_teacher`.
+Every route except `POST /auth/register`, `POST /auth/login`, `GET /`, and `GET /health` requires the bearer token. `GET /health` returns `{"status":"ok","mongo":"ok"}` or 503 when MongoDB cannot be reached. It does not load the embedding model. The server uses the token's user. A `student_id` in the body is ignored. Teachers cannot self-register; create them with `python -m rag_core.create_teacher`.
 
 `POST /ask` is never mocked. Every other call the current screens make uses `src/mocks/` only when `VITE_USE_MOCKS=true`, or when its name appears in `VITE_MOCK_ENDPOINTS`. The committed default is `VITE_USE_MOCKS=false`.
 
