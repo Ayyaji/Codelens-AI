@@ -1,10 +1,15 @@
-"""Build the local knowledge base used when a student asks for debugging help."""
+"""Build the local knowledge base used when a student asks for debugging help.
+
+This seeds Chroma from the project's own notes in ``knowledge_base/``. It is
+not a student or web proposal. Those wait in ``kb_pending`` until a teacher
+approves them.
+"""
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import TextLoader
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from rag_core.agents.retrieval import get_embeddings
 from rag_core.config import KNOWLEDGE_FILE, get_kb_dir
 
 
@@ -13,7 +18,7 @@ def build() -> None:
     documents = TextLoader(str(KNOWLEDGE_FILE), encoding="utf-8").load()
     chunks = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_documents(documents)
     print(f"Storing {len(chunks)} chunks...")
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = get_embeddings()
     vectorstore = Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,

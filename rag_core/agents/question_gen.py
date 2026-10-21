@@ -4,13 +4,11 @@ Questions are cached by a hash of the skill list. A later JD that asks for
 the same skills reuses the stored test instead of calling the model again.
 """
 
-import json
 import uuid
-from datetime import datetime
 
 from rag_core.agents.jd_analyser import analyse_jd
-from rag_core.db import connection, init_db
 from rag_core.schemas import QuestionPublic, StoredQuestion
+from rag_core.store import questions_for_cache, questions_for_jd, save_test
 from rag_core.timing import log_latency
 from rag_core.util import skills_cache_key
 
@@ -126,42 +124,20 @@ def to_public(questions: list[dict]) -> list[dict]:
     return public
 
 
-def load_questions(jd_id: str) -> list[dict] | None:
-    init_db()
-    with connection() as conn:
-        row = conn.execute(
-            "SELECT questions_json FROM generated_tests WHERE jd_id = ?",
-            (jd_id,),
-        ).fetchone()
-    if row is None:
-        return None
-    return json.loads(row["questions_json"])
+async def load_questions(jd_id: str, user_id: str) -> list[dict] | None:
+    from rag_core.store import get_jd
+
+    if await get_jd(jd_id, user_id) is None:
+        raise LookupError(jd_id)
+    return await questions_for_jd(jd_id)
 
 
-def _save(jd_id: str, cache_key: str, questions: list[dict]) -> None:
-    with connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO generated_tests (jd_id, cache_key, questions_json, created_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(jd_id) DO UPDATE SET
-                cache_key = excluded.cache_key,
-                questions_json = excluded.questions_json,
-                created_at = excluded.created_at
-            """,
-            (jd_id, cache_key, json.dumps(questions), datetime.now().isoformat()),
-        )
+async def _save(jd_id: str, user_id: str, cache_key: str, questions: list[dict]) -> None:
+    await save_test(jd_id, user_id, cache_key, questions)
 
 
-def _find_cached(cache_key: str) -> list[dict] | None:
-    with connection() as conn:
-        row = conn.execute(
-            "SELECT questions_json FROM generated_tests WHERE cache_key = ? LIMIT 1",
-            (cache_key,),
-        ).fetchone()
-    if row is None:
-        return None
-    return json.loads(row["questions_json"])
+async def _find_cached(cache_key: str) -> list[dict] | None:
+    return await questions_for_cache(cache_key)
 
 
 def _generate_with_model(skills: list[dict]) -> list[dict]:
@@ -200,24 +176,23 @@ Skills:
     return normalize_questions(complete_json("small", prompt))
 
 
-def generate_questions(jd_id: str) -> dict:
+async def generate_questions(jd_id: str, user_id: str) -> dict:
     """Return public questions for a JD, reusing a cached test when the skills match."""
     with log_latency("question_gen") as info:
-        init_db()
-        existing = load_questions(jd_id)
+        existing = await load_questions(jd_id, user_id)
         if existing is not None:
             info["cache"] = "hit"
             return {"jd_id": jd_id, "questions": to_public(existing)}
 
-        analysis = analyse_jd(jd_id)
+        analysis = await analyse_jd(jd_id, user_id)
         cache_key = skills_cache_key(analysis["skills"])
-        reused = _find_cached(cache_key)
+        reused = await _find_cached(cache_key)
         if reused is not None:
             info["cache"] = "reuse"
-            _save(jd_id, cache_key, reused)
+            await _save(jd_id, user_id, cache_key, reused)
             return {"jd_id": jd_id, "questions": to_public(reused)}
 
         info["cache"] = "miss"
         questions = _generate_with_model(analysis["skills"])
-        _save(jd_id, cache_key, questions)
+        await _save(jd_id, user_id, cache_key, questions)
         return {"jd_id": jd_id, "questions": to_public(questions)}

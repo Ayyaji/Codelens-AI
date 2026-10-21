@@ -1,16 +1,13 @@
 """Parse a job description into skills and a preparation roadmap.
 
-The analysis is cached in SQLite by a hash of the text, so the same JD is
+The analysis is cached in MongoDB by a hash of the text, so the same JD is
 not sent to the model twice. PDF and plain text are both accepted. The model
 is only called on a cache miss, and only for the structured parse.
 """
 
-import json
 import logging
-import uuid
-from datetime import datetime
 
-from rag_core.db import connection, init_db
+from rag_core.store import find_analysis, get_jd, insert_jd, save_analysis
 from rag_core.timing import log_latency
 from rag_core.util import content_hash
 
@@ -45,34 +42,18 @@ def extract_text(raw: bytes, filename: str) -> str:
     return text.replace("\x00", "").strip()
 
 
-def store_jd(text: str, filename: str = "jd.txt") -> str:
-    """Persist the JD and return its id. Analysis happens later, and is cached."""
+async def store_jd(text: str, filename: str, user_id: str) -> str:
+    """Persist the JD for this student and return its id. Analysis happens later."""
     cleaned = text.strip()
     if not cleaned:
         raise ValueError("Job description is empty")
     if len(cleaned) > MAX_STORED_CHARS:
         raise ValueError("Job description is too long")
-    init_db()
-    jd_id = uuid.uuid4().hex
-    now = datetime.now().isoformat()
-    with connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO job_descriptions (id, content_hash, filename, raw_text, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (jd_id, content_hash(cleaned), filename, cleaned, now),
-        )
-    return jd_id
+    return await insert_jd(user_id, cleaned, filename, content_hash(cleaned))
 
 
-def _load_jd(jd_id: str):
-    init_db()
-    with connection() as conn:
-        row = conn.execute(
-            "SELECT id, content_hash, raw_text FROM job_descriptions WHERE id = ?",
-            (jd_id,),
-        ).fetchone()
+async def _load_jd(jd_id: str, user_id: str):
+    row = await get_jd(jd_id, user_id)
     if row is None:
         raise LookupError(jd_id)
     return row
@@ -151,32 +132,21 @@ Job description:
     return _normalize(complete_json("small", prompt))
 
 
-def analyse_jd(jd_id: str) -> dict:
-    """Return skills and a roadmap, using the SQLite cache when the text matches."""
+async def analyse_jd(jd_id: str, user_id: str) -> dict:
+    """Return skills and a roadmap, using the Mongo cache when the text matches."""
     with log_latency("jd_analyser") as info:
-        row = _load_jd(jd_id)
-        digest = row["content_hash"]
-        with connection() as conn:
-            cached = conn.execute(
-                "SELECT analysis_json FROM jd_analysis WHERE content_hash = ?",
-                (digest,),
-            ).fetchone()
+        row = await _load_jd(jd_id, user_id)
+        if isinstance(row.get("analysis"), dict):
+            info["cache"] = "hit"
+            return row["analysis"]
+        cached = await find_analysis(row["content_hash"])
         if cached:
             info["cache"] = "hit"
-            return json.loads(cached["analysis_json"])
+            await save_analysis(jd_id, cached)
+            return cached
 
         info["cache"] = "miss"
         analysis = _parse_with_model(row["raw_text"])
-        with connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO jd_analysis (content_hash, analysis_json, created_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(content_hash) DO UPDATE SET
-                    analysis_json = excluded.analysis_json,
-                    created_at = excluded.created_at
-                """,
-                (digest, json.dumps(analysis), datetime.now().isoformat()),
-            )
-        logger.info("cached jd analysis hash=%s", digest[:12])
+        await save_analysis(jd_id, analysis)
+        logger.info("cached jd analysis hash=%s", row["content_hash"][:12])
         return analysis
