@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { ask } from "../api/client";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ask, getMyChat } from "../api/client";
 import { DIRECTIVE_COPY, DirectiveBadge } from "../components/DirectiveBadge";
-import { ErrorBanner, LoadingLine, PageHeader, btn, field } from "../components/ui";
-import { useSession } from "../session";
+import { ErrorBanner, LoadingLine, PageHeader, btn, btnGhost, field } from "../components/ui";
 
 const ACCENT = {
   full: "border-l-full",
@@ -23,23 +23,72 @@ const STARTERS = [
 
 let turnId = 0;
 
+function turnsFromMessages(messages) {
+  return (messages || []).map((message, index) => ({
+    id: `m-${index}-${message.ts || index}`,
+    role: message.role === "assistant" ? "assistant" : "user",
+    text: message.content || "",
+    directive: message.directive,
+    agent: message.agent_used,
+  }));
+}
+
 export function ChatPage() {
-  const { session } = useSession();
+  const { chatId: routeChatId = "" } = useParams();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [chatId, setChatId] = useState(routeChatId);
+  const [title, setTitle] = useState("");
   const [turns, setTurns] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingChat, setLoadingChat] = useState(Boolean(routeChatId));
+  const skipLoad = useRef("");
+
+  useEffect(() => {
+    if (!routeChatId) {
+      setChatId("");
+      setTitle("");
+      setTurns([]);
+      setLoadingChat(false);
+      return undefined;
+    }
+    if (skipLoad.current === routeChatId) {
+      skipLoad.current = "";
+      return undefined;
+    }
+    let cancel = false;
+    setLoadingChat(true);
+    setError("");
+    getMyChat(routeChatId)
+      .then((chat) => {
+        if (cancel) return;
+        setChatId(chat.chat_id || routeChatId);
+        setTitle(chat.title || "");
+        setTurns(turnsFromMessages(chat.messages));
+      })
+      .catch((err) => {
+        if (!cancel) setError(err.message || "Could not open that chat.");
+      })
+      .finally(() => {
+        if (!cancel) setLoadingChat(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [routeChatId]);
 
   async function send(text) {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || loadingChat) return;
     setQuery("");
     setError("");
     setBusy(true);
     const mine = { id: `u-${++turnId}`, role: "user", text: trimmed };
     setTurns((current) => [...current, mine]);
     try {
-      const data = await ask({ studentId: session.studentId, query: trimmed });
+      const data = await ask({ query: trimmed, chatId: chatId || undefined });
+      if (data.chat_id) setChatId(data.chat_id);
       setTurns((current) => [
         ...current,
         {
@@ -50,6 +99,10 @@ export function ChatPage() {
           agent: data.agent_used,
         },
       ]);
+      if (data.chat_id && data.chat_id !== routeChatId) {
+        skipLoad.current = data.chat_id;
+        navigate(`/chat/${encodeURIComponent(data.chat_id)}`, { replace: true });
+      }
     } catch (err) {
       setError(err.message || "The guidance chat could not reach POST /ask.");
     } finally {
@@ -67,9 +120,14 @@ export function ChatPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        kicker="05  Guidance"
-        title="Ask while you practise"
-        lede="This chat calls POST /ask on the live API. Each reply carries a directive — full, hint, gentle, or break — and that badge is the one the server sent."
+        kicker="Guidance"
+        title={title || "Ask while you practise"}
+        lede="Each turn calls POST /ask. A chat id comes back with the first reply and is sent on the next one, so the thread continues."
+        actions={
+          <Link to="/space" className={btnGhost}>
+            My Space
+          </Link>
+        }
       />
       <ul className="mb-6 grid gap-2 sm:grid-cols-2">
         {Object.entries(DIRECTIVE_COPY).map(([key, copy]) => (
@@ -86,11 +144,11 @@ export function ChatPage() {
         </div>
       ) : null}
       <ErrorBanner message={error} />
+      {loadingChat ? <LoadingLine label="Opening the chat…" /> : null}
       <div className="space-y-3">
-        {turns.length === 0 ? (
+        {!loadingChat && turns.length === 0 ? (
           <p className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-faint">
-            No messages yet. The badges above are the four directives. A reply will wear the one returned in{" "}
-            <span className="font-mono">directive</span>.
+            No messages yet. A reply wears the directive returned in <span className="font-mono">directive</span>.
           </p>
         ) : null}
         {turns.map((turn) =>
@@ -115,7 +173,13 @@ export function ChatPage() {
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {STARTERS.map((starter) => (
-          <button key={starter} type="button" className="rounded-full border border-line px-3 py-1 text-xs text-mute hover:text-paper" onClick={() => send(starter)} disabled={busy}>
+          <button
+            key={starter}
+            type="button"
+            className="rounded-full border border-line px-3 py-1 text-xs text-mute hover:text-paper"
+            onClick={() => send(starter)}
+            disabled={busy || loadingChat}
+          >
             {starter}
           </button>
         ))}
@@ -132,7 +196,7 @@ export function ChatPage() {
           placeholder="Ask about a bug, a concept, or the skill you just missed."
         />
         <div className="flex justify-end">
-          <button type="submit" className={btn} disabled={busy || !query.trim()}>
+          <button type="submit" className={btn} disabled={busy || loadingChat || !query.trim()}>
             {busy ? "Sending…" : "Send"}
           </button>
         </div>
