@@ -249,7 +249,8 @@ Configuration is `MONGODB_URI` (default `mongodb://localhost:27017`) and `MONGOD
 | `jds` | `_id` is a uuid hex string. `user_id`, `content_hash`, `filename`, `raw_text`, `analysis` (cached `{skills, roadmap}` or null), `created_at`. | `user_id`; `content_hash` |
 | `tests` | `jd_id`, `user_id`, `cache_key` (hash of the skill list), `questions` (includes the answer key), `created_at`. | unique `jd_id`; `cache_key`; `user_id` |
 | `submissions` | `user_id`, `jd_id`, `score`, `answers`, `weak_topics`, `mistake_patterns`, `created_at`. `_id` is the `test_id` returned by history. | `(user_id, created_at desc)` |
-| `kb_pending` | `content`, `source`, `proposed_by`, `query`, `status` (`pending`, `approved`, or `rejected`), `reviewed_by`, `reviewed_at`, `created_at`. Migrated rows may have `legacy_id`. | `status`; unique sparse `legacy_id` |
+| `kb_pending` | `content`, `title`, `topic`, `tags`, `difficulty`, `type`, `origin`, `source`, `proposed_by`, `proposer_name`, `proposer_role`, `query`, `status` (`pending`, `approved`, or `rejected`), `reject_reason`, `reviewed_by`, `reviewed_at`, `created_at`, `updated_at`, `chroma_ids`. Migrated rows may have `legacy_id`. | `status`; `(status, created_at)`; `(status, updated_at desc)`; `created_at`; `topic`; `type`; `source`; `tags`; unique sparse `legacy_id` |
+| `kb_uploads` | `filename`, `media_type`, `size`, `status` (`chunked` or `failed`), `progress`, `error`, `chunks`, `kb_item_id`, `uploaded_by`, `created_at`. | `created_at desc`; `status`; `uploaded_by`; `kb_item_id` |
 | `activity` | `user_id`, `type`, `detail`, `ts`. | `(user_id, ts desc)`; `(ts desc)`; `(user_id, type, ts desc)` |
 
 ### How the persona stays current
@@ -264,7 +265,7 @@ Other activity types, recorded for the teacher feed and not read by judgment: `r
 
 ### Knowledge-base gate
 
-`stage_for_approval` inserts a `kb_pending` document with `status: pending`. The web agent uses only that function. `POST /teacher/kb/{id}/approve` is the only HTTP handler that calls `write_kb_document`, and it does so after the row is confirmed pending. If Chroma raises, the status stays `pending` and the API returns 502. Editing a pending row (`PUT`) and rejecting it do not write to Chroma. A second approve or reject returns 409.
+`stage_for_approval` inserts a `kb_pending` document with `status: pending` and `origin: ai`. The web agent uses only that function. `write_kb_document` runs when a teacher approves a pending note, creates a note with `approve` left on (the default), bulk-approves, or accepts upload chunks. It writes the Chroma index in `CODELENS_KB` (`codelens_kb`). If Chroma raises, a single approve or create stays `pending` and the API returns 502. A bulk id that fails is listed in `failed` and stays `pending`. Deleting an approved note removes its Chroma vectors first. Editing a pending row and rejecting a row do not write to Chroma. Editing an approved note's title, content, or source replaces its vectors. A second approve or reject returns 409.
 
 ### Relationships
 
@@ -275,6 +276,7 @@ users 1──* jds 1──1 tests
 users 1──* submissions
 users 1──* activity
 users 1──* kb_pending   (proposed_by / reviewed_by)
+users 1──* kb_uploads   (uploaded_by; kb_item_id points at kb_pending)
 ```
 
 `POST /teacher/students/{id}/reset` deletes that student's chats, persona, submissions, activity, job descriptions, and tests, then writes one `account` activity `{action: reset, by}`. The user document and any `kb_pending` rows they proposed stay.
@@ -347,10 +349,19 @@ Teacher routes. A student token receives 403.
 | `PATCH` | `/teacher/students/{id}` | `{ "disabled" }` | student summary |
 | `POST` | `/teacher/students/{id}/reset` | | `{ "id", "reset": true }` |
 | `GET` | `/teacher/activity?limit=` | `limit` 1–200, default 50 | activity feed |
+| `GET` | `/teacher/kb` | filters `q`, `status`, `topic`, `tag`, `type`, `source`, `from`, `to`, `page`, `page_size` | `{ "items", "total", "page", "page_size", "counts", "facets" }` |
+| `POST` | `/teacher/kb` | `{ "title", "content", "topic", "tags", "difficulty", "source", "type", "approve"? }` | the item. `approve` defaults to true and writes Chroma |
 | `GET` | `/teacher/kb/pending` | | pending items |
-| `PUT` | `/teacher/kb/{id}` | `{ "content" }` | the edited pending item |
+| `GET` | `/teacher/kb/{id}` | | the item |
+| `PUT` | `/teacher/kb/{id}` | any of `title`, `content`, `topic`, `tags`, `difficulty`, `source`, `type` | the edited item. Status does not change |
+| `DELETE` | `/teacher/kb/{id}` | | `{ "id", "deleted": true }`. Approved rows are removed from Chroma |
 | `POST` | `/teacher/kb/{id}/approve` | | approved item; this writes Chroma |
-| `POST` | `/teacher/kb/{id}/reject` | | rejected item |
+| `POST` | `/teacher/kb/{id}/reject` | `{ "reason"? }` | rejected item |
+| `POST` | `/teacher/kb/bulk` | `{ "ids", "action", "reason"? }` | `{ "updated", "failed" }` |
+| `GET` | `/teacher/kb/uploads` | | upload records, newest first |
+| `POST` | `/teacher/kb/uploads` | multipart `file` | the upload record |
+| `POST` | `/teacher/kb/uploads/{id}/approve` | `{ "chunk_indexes"?, "title"?, "topic"?, "tags"?, "difficulty"? }` | `{ "upload", "item" }` |
+| `DELETE` | `/teacher/kb/uploads/{id}` | | `{ "id", "deleted": true }` |
 
 `directive_counts` is `{ "full", "hint", "gentle", "break" }`. `avg_score` on the overview is the mean of every submission, `0.0` when there are none. A student's `avg_score` is `null` when they have no submissions. `active_today` counts distinct students with any activity since UTC midnight.
 

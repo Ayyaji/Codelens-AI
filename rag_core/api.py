@@ -33,7 +33,24 @@ from rag_core.auth import (
 )
 from rag_core.config import cors_origin_regex, cors_origins
 from rag_core.judgment import extract_error_type
-from rag_core.kb_update import approve_pending, edit_pending, pending_items, reject_pending
+from rag_core.kb_fields import KBInputError
+from rag_core.kb_files import UploadRejected
+from rag_core.kb_update import (
+    ChromaError,
+    MissingUpload,
+    approve_pending,
+    approve_upload,
+    bulk_review,
+    create_kb_item,
+    delete_kb_item,
+    discard_upload,
+    edit_kb,
+    pending_items,
+    reject_pending,
+    save_upload,
+    search_library,
+    uploads,
+)
 from rag_core.llm import init_clients
 from rag_core.mongo import close_mongo, ping
 from rag_core.pipeline import run_pipeline
@@ -51,8 +68,17 @@ from rag_core.schemas import (
     HistoryResponse,
     JDAnalysisResponse,
     JDUploadResponse,
-    KBEdit,
+    KBBulkRequest,
+    KBBulkResponse,
+    KBCreate,
+    KBDeleted,
     KBItem,
+    KBLibraryPage,
+    KBPatch,
+    KBReject,
+    KBUpload,
+    KBUploadApprove,
+    KBUploadApproved,
     LoginRequest,
     OverviewResponse,
     PersonaResponse,
@@ -78,6 +104,8 @@ from rag_core.store import (
     persona_view,
     save_turn,
     set_disabled,
+    find_kb,
+    kb_public_one,
     student_detail,
     student_row,
     student_rows,
@@ -463,21 +491,153 @@ async def teacher_activity(
     return await activity_feed(limit)
 
 
+def _kb_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, KBInputError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, MissingUpload):
+        return HTTPException(status_code=404, detail="Upload not found")
+    if isinstance(exc, LookupError):
+        return HTTPException(status_code=404, detail="Knowledge item not found")
+    if isinstance(exc, ChromaError):
+        return HTTPException(status_code=502, detail=str(exc))
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=500, detail="Knowledge base request failed")
+
+
 @app.get("/teacher/kb/pending", response_model=list[KBItem], tags=["teacher"])
 async def teacher_pending_kb(teacher: dict = Depends(current_teacher)):
     del teacher
     return await pending_items()
 
 
-@app.put("/teacher/kb/{item_id}", response_model=KBItem, tags=["teacher"])
-async def teacher_edit_kb(item_id: str, body: KBEdit, teacher: dict = Depends(current_teacher)):
+@app.get("/teacher/kb", response_model=KBLibraryPage, tags=["teacher"])
+async def teacher_search_kb(
+    q: str = "",
+    status: str = "",
+    topic: str = "",
+    tag: str = "",
+    note_type: str = Query(default="", alias="type"),
+    source: str = "",
+    created_from: str = Query(default="", alias="from"),
+    to: str = "",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=8, ge=1, le=50),
+    teacher: dict = Depends(current_teacher),
+):
     del teacher
     try:
-        return await edit_pending(item_id, body.content)
+        return await search_library(
+            {
+                "q": q,
+                "status": status,
+                "topic": topic,
+                "tag": tag,
+                "type": note_type,
+                "source": source,
+                "from": created_from,
+                "to": to,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+    except KBInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/teacher/kb", response_model=KBItem, tags=["teacher"])
+async def teacher_create_kb(body: KBCreate, teacher: dict = Depends(current_teacher)):
+    try:
+        return await create_kb_item(teacher, body.model_dump(exclude_unset=True))
+    except KBInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ChromaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/teacher/kb/bulk", response_model=KBBulkResponse, tags=["teacher"])
+async def teacher_bulk_kb(body: KBBulkRequest, teacher: dict = Depends(current_teacher)):
+    try:
+        return await bulk_review(teacher, body.ids, body.action, body.reason)
+    except KBInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/teacher/kb/uploads", response_model=list[KBUpload], tags=["teacher"])
+async def teacher_list_uploads(teacher: dict = Depends(current_teacher)):
+    del teacher
+    return await uploads()
+
+
+@app.post("/teacher/kb/uploads", response_model=KBUpload, tags=["teacher"])
+async def teacher_create_upload(request: Request, teacher: dict = Depends(current_teacher)):
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(status_code=422, detail="Choose a file.")
+    raw = await upload.read()
+    media = getattr(upload, "content_type", None) or ""
+    try:
+        return await save_upload(teacher, getattr(upload, "filename", None), media, raw)
+    except UploadRejected as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+@app.post("/teacher/kb/uploads/{upload_id}/approve", response_model=KBUploadApproved, tags=["teacher"])
+async def teacher_approve_upload(upload_id: str, body: KBUploadApprove, teacher: dict = Depends(current_teacher)):
+    try:
+        return await approve_upload(teacher, upload_id, body.model_dump(exclude_unset=True))
+    except Exception as exc:
+        if isinstance(exc, (KBInputError, MissingUpload, LookupError, ChromaError, ValueError)):
+            raise _kb_error(exc) from exc
+        logger.exception("upload approval failed")
+        raise HTTPException(status_code=502, detail="Could not write to the knowledge base") from exc
+
+
+@app.delete("/teacher/kb/uploads/{upload_id}", response_model=KBDeleted, tags=["teacher"])
+async def teacher_discard_upload(upload_id: str, teacher: dict = Depends(current_teacher)):
+    del teacher
+    try:
+        return await discard_upload(upload_id)
+    except Exception as exc:
+        if isinstance(exc, (MissingUpload, ValueError)):
+            raise _kb_error(exc) from exc
+        raise
+
+
+@app.get("/teacher/kb/{item_id}", response_model=KBItem, tags=["teacher"])
+async def teacher_get_kb(item_id: str, teacher: dict = Depends(current_teacher)):
+    del teacher
+    doc = await find_kb(item_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Knowledge item not found")
+    return await kb_public_one(doc)
+
+
+@app.put("/teacher/kb/{item_id}", response_model=KBItem, tags=["teacher"])
+async def teacher_edit_kb(item_id: str, body: KBPatch, teacher: dict = Depends(current_teacher)):
+    del teacher
+    try:
+        return await edit_kb(item_id, body.model_dump(exclude_unset=True))
     except LookupError:
         raise HTTPException(status_code=404, detail="Pending item not found") from None
+    except KBInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ChromaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.delete("/teacher/kb/{item_id}", response_model=KBDeleted, tags=["teacher"])
+async def teacher_delete_kb(item_id: str, teacher: dict = Depends(current_teacher)):
+    del teacher
+    try:
+        return await delete_kb_item(item_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Knowledge item not found") from None
+    except ChromaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/teacher/kb/{item_id}/approve", response_model=KBItem, tags=["teacher"])
@@ -488,16 +648,22 @@ async def teacher_approve_kb(item_id: str, teacher: dict = Depends(current_teach
         raise HTTPException(status_code=404, detail="Pending item not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("knowledge base approval failed")
-        raise HTTPException(status_code=502, detail="Could not write to the knowledge base") from exc
+    except ChromaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/teacher/kb/{item_id}/reject", response_model=KBItem, tags=["teacher"])
-async def teacher_reject_kb(item_id: str, teacher: dict = Depends(current_teacher)):
+async def teacher_reject_kb(
+    item_id: str,
+    body: KBReject | None = None,
+    teacher: dict = Depends(current_teacher),
+):
+    reason = None if body is None else body.reason
     try:
-        return await reject_pending(item_id, teacher["id"])
+        return await reject_pending(item_id, teacher["id"], reason)
     except LookupError:
         raise HTTPException(status_code=404, detail="Pending item not found") from None
+    except KBInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

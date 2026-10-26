@@ -96,6 +96,18 @@ async def ensure_indexes(db) -> None:
 
     await db.kb_pending.create_index("status")
     await db.kb_pending.create_index("legacy_id", unique=True, sparse=True)
+    await db.kb_pending.create_index([("status", 1), ("created_at", 1)])
+    await db.kb_pending.create_index([("status", 1), ("updated_at", -1)])
+    await db.kb_pending.create_index("created_at")
+    await db.kb_pending.create_index("topic")
+    await db.kb_pending.create_index("type")
+    await db.kb_pending.create_index("source")
+    await db.kb_pending.create_index("tags")
+
+    await db.kb_uploads.create_index([("created_at", -1)])
+    await db.kb_uploads.create_index("status")
+    await db.kb_uploads.create_index("uploaded_by")
+    await db.kb_uploads.create_index("kb_item_id")
 
     await db.activity.create_index([("user_id", 1), ("ts", -1)])
     await db.activity.create_index([("ts", -1)])

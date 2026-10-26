@@ -38,7 +38,7 @@ Checked against PR #3. This client follows the shapes in that branch. These are 
 10. Overview `avg_score` is `0` when nobody has submitted. A student's `avg_score` is `null` in that case. `active_today` counts distinct students with any activity since UTC midnight.
 11. Reset returns `{id, reset: true}`. It deletes chats, the persona, submissions, activity, job descriptions, and generated tests. The account and the disabled flag stay. Knowledge-base items they proposed stay in the queue. The mock has no generated-test collection separate from submissions.
 12. Real chat, user, submission, and knowledge-base ids are Mongo ObjectId strings. Job description ids are uuid hex. The client treats every id as an opaque string. The mock uses readable ids such as `stu_ada` and `chat_ada_none`.
-13. The library page calls the proposed `/teacher/kb` collection, upload, and bulk routes documented at the end of the teacher section. PR #3 only has `GET /teacher/kb/pending`, `PUT` of `{content}` while pending, and approve/reject with no reason. Those four still exist in the mock. The new page does not use the content-only edit.
+13. The library page calls `GET /teacher/kb`, `POST /teacher/kb`, `PUT` with the full note, `DELETE`, `POST /teacher/kb/bulk`, and the `/teacher/kb/uploads` routes. Those are implemented. `GET /teacher/kb/pending` and approve/reject remain. A content-only `PUT` still edits a pending note. The library sends the fuller body, including for a note that is already approved.
 
 ---
 
@@ -361,10 +361,10 @@ All of these are 403 `Teacher access required` for a student. Mock names: `overv
 | `PATCH` | `/teacher/students/{id}` | `{disabled: true}` | the student list item |
 | `POST` | `/teacher/students/{id}/reset` | | `{id, reset: true}` |
 | `GET` | `/teacher/activity?limit=` | | newest student events, `limit` 1–200, default 50 |
-| `GET` | `/teacher/kb/pending` | | pending notes, oldest first. Still implemented. The library page uses `GET /teacher/kb` below. |
-| `PUT` | `/teacher/kb/{id}` | `{content}` on PR #3 | the edited note. This client sends the fuller body in the proposal section. |
-| `POST` | `/teacher/kb/{id}/approve` | | the note, `status: "approved"`. On PR #3 this is the only call that writes the note to Chroma |
-| `POST` | `/teacher/kb/{id}/reject` | `{reason}` optional on the proposal | the note, `status: "rejected"` |
+| `GET` | `/teacher/kb/pending` | | pending notes, oldest first. The library page uses `GET /teacher/kb` below. |
+| `PUT` | `/teacher/kb/{id}` | any of `title`, `content`, `topic`, `tags`, `difficulty`, `source`, `type` | the edited note. `{content}` alone still works. Status does not change. |
+| `POST` | `/teacher/kb/{id}/approve` | | the note, `status: "approved"`. Writes the note to Chroma |
+| `POST` | `/teacher/kb/{id}/reject` | `{reason}` optional | the note, `status: "rejected"` |
 
 `directive_counts` is `{full, hint, gentle, break}`.
 
@@ -372,13 +372,15 @@ All of these are 403 `Teacher access required` for a student. Mock names: `overv
 
 An activity item is `{id, user_id, type, detail, ts}`. The feed also sends `name` and `email`. `detail` is an object. Guidance rows carry `query`, `agent_used`, `response_time`, `error_type`, `topic`, and `directive`. A test submission adds `score`, `jd_id`, and `test_id`. An account row is `{action, by}` where `action` is `disabled`, `enabled`, or `reset`.
 
-A note on PR #3 is `{id, content, source, proposed_by, status, query, reviewed_by, reviewed_at, created_at}`. `status` is `pending`, `approved`, or `rejected`. Approving or rejecting a note that is not pending is 409. On PR #3, editing a note that is not pending is 409 `Only a pending item can be edited`, and the body is `{content}` only. Blank content is 422. Editing and rejecting do not write to Chroma. The library UI does not call that narrow edit. It calls the proposal below, including while a note is already approved.
+A note is the object in the library section below. Older rows may only have had `{id, content, source, proposed_by, status, query, reviewed_by, reviewed_at, created_at}`; the API fills `title` from `query`, `type` with `concept`, and the other fields with empty or null. `status` is `pending`, `approved`, or `rejected`. Approving or rejecting a note that is not pending is 409. Rejected notes cannot be edited (409 `Only a pending or approved item can be edited`). Blank content is 422. Rejecting does not write to Chroma. Editing a pending note does not write to Chroma. Editing an approved note's title, content, or source replaces its Chroma vectors.
 
 The dashboard charts plot `directive_counts` and each student's `avg_score`. Those charts are not extra API fields. The students search box filters the array already returned. `pending_kb` on the overview is still the count of notes with `status: "pending"`.
 
-## Proposed knowledge-base routes
+## Knowledge-base library
 
-Not on PR #3. The teacher library calls these paths on `VITE_API_URL`. With `VITE_USE_MOCKS=true` (or the `kb` mock name) the fixtures implement them. Against the current auth backend they will 404 until Raghava adds them.
+Implemented on the API. The teacher library calls these paths on `VITE_API_URL`. With `VITE_USE_MOCKS=true` (or the `kb` mock name) the fixtures answer them instead. Every route requires a teacher. A student receives 403 `Teacher access required`.
+
+Rows live in MongoDB `kb_pending`. Upload chunks live in `kb_uploads` until they are accepted. Approved text is also written to the Chroma collection at `CODELENS_KB` (directory `codelens_kb`) through `write_kb_document`, the same call `POST /teacher/kb/{id}/approve` uses. The stored `chroma_ids` are how a later delete or edit removes those vectors. `python -m rag_core.build_kb` is still the offline seed and is separate from these routes.
 
 A knowledge item:
 
@@ -408,7 +410,7 @@ A knowledge item:
 
 `difficulty` is `easy`, `medium`, `hard`, or null. `source` is `teacher`, `student`, `ai`, `web`, `upload`, or `textbook`. `type` is `concept`, `qa`, `college`, or `document`. `origin` is who created the row: `teacher`, `student`, `ai`, or `upload`. `status` is `pending`, `approved`, or `rejected`.
 
-`POST /teacher/kb` is teacher-only. The server sets `origin` from the caller. `approve` defaults to true for a teacher, which stores the item as `approved`. `approve: false` leaves it `pending`. An item whose origin is `student` or `ai` stays `pending` even if `approve` is sent. There is no student write route in this client yet.
+`POST /teacher/kb` is teacher-only. The server sets `origin` to `teacher` from the caller and ignores a client-supplied origin. `approve` defaults to true, which writes Chroma and stores the item as `approved`. `approve: false` leaves it `pending` and does not write Chroma. If Chroma raises, the row stays `pending` and the response is 502 `Could not write to the knowledge base`. There is no student write route. The guide still stages web notes with `origin: "ai"` and `status: "pending"`; those become searchable only through approve.
 
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
@@ -438,8 +440,12 @@ A knowledge item:
 
 `counts` respect every filter except `status`, so the Pending / Approved / Rejected tabs can show how many notes the other filters would leave in each tab. `facets` are taken from the whole library.
 
-`POST /teacher/kb/bulk` `action` is `approve` or `reject`. Reject requires a non-empty `reason`. Ids that are missing or not pending go in `failed` and do not fail the whole call. Single `POST /teacher/kb/{id}/reject` accepts `{reason}`. A blank reason is 422. Omitting the body still rejects, matching PR #3.
+`POST /teacher/kb/bulk` `action` is `approve` or `reject`. Reject requires a non-empty `reason`. Ids that are missing or not pending go in `failed` and do not fail the whole call. An id whose Chroma write fails stays `pending` and is listed in `failed` with `Could not write to the knowledge base`. Single `POST /teacher/kb/{id}/reject` accepts `{reason}`. A blank reason is 422. Omitting the body still rejects.
 
-Upload accepts `.pdf`, `.docx`, `.txt`, `.md` up to 5 MB. Anything else is 415. Over the limit is 413. The record is `{id, filename, media_type, size, status, progress, error, created_at, kb_item_id, chunks}`. `status` is `processing`, `chunked`, or `failed`. A chunk is `{index, title, content}`. Approving chunks creates one `type: "document"`, `source: "upload"` item with `status: "approved"` and sets `kb_item_id`. Approving before `chunked` is 409. Discarding an upload that already has `kb_item_id` is 409.
+`DELETE /teacher/kb/{id}` removes the Mongo row. An approved row's Chroma vectors are removed first. If that delete fails, the row stays and the response is 502. Pending and rejected rows have no vectors to remove.
 
-Title is required, at most 140 characters. Content is required. Topic is required, at most 60 characters. At most 8 tags, each at most 32 characters. Unknown difficulty, source, or type is 422. Missing items are 404. Students receive 403 `Teacher access required`.
+`PUT` of an approved note rewrites Chroma when `title`, `content`, or `source` changes, then drops the previous vectors. A change that only touches topic, tags, difficulty, or type does not call Chroma. Pending edits never call Chroma. `approve` on a `PUT` body is ignored, so saving an edit does not change status.
+
+Upload accepts `.pdf`, `.docx`, `.txt`, `.md`, and `.markdown` up to 5 MB. Anything else is 415 `Upload a PDF, DOCX, TXT, or MD file.` Over the limit is 413 `That file is larger than 5 MB.` The record is `{id, filename, media_type, size, status, progress, error, created_at, kb_item_id, chunks}`. `status` is `processing`, `chunked`, or `failed`. This server chunks during the POST, so the response is already `chunked` or `failed` rather than left on `processing`. A file that cannot be read is still 200, with `status: "failed"` and `error` set. A chunk is `{index, title, content}`. Approving chunks writes one Chroma document and one `type: "document"`, `source: "upload"`, `origin: "upload"` item with `status: "approved"`, and sets `kb_item_id`. If that write fails, no library row is kept and the response is 502. Approving before `chunked`, or approving twice, is 409. Discarding an upload that already has `kb_item_id` is 409 `That upload is already in the library`.
+
+Title is required, at most 140 characters. Content is required, at most 20,000 characters. Topic is required, at most 60 characters. At most 8 tags, each at most 32 characters, stored lowercase. Unknown difficulty, source, or type is 422. A missing note is 404. A missing upload is 404 `Upload not found`. Students receive 403 `Teacher access required`. `GET /teacher/kb` with `page` past the last page returns the last page. `page_size` above 50 is 422.
