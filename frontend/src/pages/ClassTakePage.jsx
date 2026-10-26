@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
-import { getClassTest, runClassCode, saveClassAnswers, startClassTest, submitClassTest } from "../api/client";
+import { getClassTest, recordClassFocusLoss, runClassCode, saveClassAnswers, startClassTest, submitClassTest } from "../api/client";
 import { ErrorBanner, LoadingLine, PageHeader, btn, btnGhost } from "../components/ui";
-import { formatClock } from "../lib/format";
+import { formatClock, formatLead } from "../lib/format";
 
 function useServerCountdown(deadline, serverNow) {
   const skew = useRef(0);
@@ -61,7 +61,9 @@ export function ClassTakePage() {
   const [saveState, setSaveState] = useState("");
   const dirty = useRef(false);
   const fired = useRef(false);
+  const lastFocus = useRef(0);
   const remaining = useServerCountdown(paper?.status === "in_progress" ? paper.deadline : null, paper?.server_now);
+  const opensIn = useServerCountdown(paper?.phase === "upcoming" ? paper.available_from : null, paper?.server_now);
 
   useEffect(() => {
     let cancel = false;
@@ -86,6 +88,25 @@ export function ClassTakePage() {
       cancel = true;
     };
   }, [testId, navigate]);
+
+  useEffect(() => {
+    if (paper?.status !== "in_progress") return undefined;
+    function note() {
+      const now = Date.now();
+      if (now - lastFocus.current < 1000) return;
+      lastFocus.current = now;
+      recordClassFocusLoss(testId).catch(() => {});
+    }
+    function onVisibility() {
+      if (document.visibilityState === "hidden") note();
+    }
+    window.addEventListener("blur", note);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", note);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [paper?.status, testId]);
 
   useEffect(() => {
     if (!paper || paper.status !== "in_progress" || !dirty.current) return undefined;
@@ -184,8 +205,13 @@ export function ClassTakePage() {
           lede={paper.description || `${paper.duration_minutes} minutes · ${paper.question_count} questions. The timer starts when you press Start.`}
         />
         <ErrorBanner message={error} />
+        {paper.phase === "upcoming" && opensIn !== null ? (
+          <p className="mb-4 font-mono text-2xl tabular-nums text-paper" aria-live="polite">
+            Starts in {formatLead(opensIn)}
+          </p>
+        ) : null}
         <button type="button" className={btn} onClick={begin} disabled={starting || !paper.can_start}>
-          {starting ? "Starting…" : paper.can_start ? "Start" : "Not open"}
+          {starting ? "Starting…" : paper.can_start ? "Start" : paper.phase === "upcoming" ? "Not open yet" : "Not open"}
         </button>
       </div>
     );
@@ -205,7 +231,10 @@ export function ClassTakePage() {
       <PageHeader
         kicker={`${paper.topic} · ${paper.test_type}`}
         title={paper.title}
-        lede={paper.description || "Answers save on their own. When the timer hits zero the paper submits what was saved."}
+        lede={
+          paper.description ||
+          "Answers save on their own. Switching away from this tab is counted. When the timer hits zero the paper submits what was saved."
+        }
         actions={
           <div className="flex items-center gap-3">
             <p className="font-mono text-[11px] text-faint">{saveState}</p>
