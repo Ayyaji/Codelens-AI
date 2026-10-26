@@ -48,7 +48,6 @@ export function TestPage() {
     });
     try {
       const result = await submitTest({
-        studentId: session.studentId,
         jdId: session.jdId,
         answers,
       });

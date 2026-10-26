@@ -40,7 +40,59 @@ export function formatClock(ms) {
 }
 
 export function formatScore(score) {
+  if (score == null || score === "") return "—";
   const value = Number(score);
   if (!Number.isFinite(value)) return "—";
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+export function formatWhen(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+const ACTIVITY_LABELS = {
+  ask: "Guidance",
+  test_submit: "Test",
+  account: "Account",
+  jd_upload: "Upload",
+  jd_analyse: "Analysis",
+  test_generate: "Generate",
+  run: "Run",
+  login: "Login",
+  register: "Register",
+};
+
+export function activityType(type) {
+  return ACTIVITY_LABELS[type] || String(type || "Event").replaceAll("_", " ");
+}
+
+export function activityLine(item) {
+  const detail = item?.detail && typeof item.detail === "object" ? item.detail : {};
+  const type = item?.type || "";
+  if (type === "ask") {
+    const directive = detail.directive ? String(detail.directive).toUpperCase() : "CHAT";
+    const topic = detail.topic || detail.query || "";
+    return topic ? `${directive} · ${topic}` : directive;
+  }
+  if (type === "test_submit") {
+    const score = detail.score == null ? "" : `score ${detail.score}`;
+    const directive = detail.directive ? String(detail.directive).toUpperCase() : "";
+    return [score, directive].filter(Boolean).join(" · ") || "Submitted a test";
+  }
+  if (type === "account") return detail.action ? `Account ${detail.action}` : "Account change";
+  if (type === "jd_upload") return detail.filename ? `Uploaded ${detail.filename}` : "Uploaded a job description";
+  if (type === "jd_analyse") return "Analysed a job description";
+  if (type === "test_generate") return "Generated a test";
+  if (type === "run") return detail.language ? `Ran ${detail.language}` : "Ran code";
+  if (type === "login") return "Signed in";
+  if (type === "register") return "Registered";
+  return activityType(type);
 }
