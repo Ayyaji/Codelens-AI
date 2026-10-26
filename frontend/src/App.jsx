@@ -1,17 +1,27 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Navbar } from "./components/Navbar";
-import { AnalysisPage } from "./pages/AnalysisPage";
 import { ChatPage } from "./pages/ChatPage";
+import { ActivityPage } from "./pages/ActivityPage";
+import { AnalysisPage } from "./pages/AnalysisPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { KbPage } from "./pages/KbPage";
 import { LoginPage } from "./pages/LoginPage";
+import { MySpacePage } from "./pages/MySpacePage";
+import { RegisterPage } from "./pages/RegisterPage";
 import { ResultsPage } from "./pages/ResultsPage";
+import { StudentDetailPage } from "./pages/StudentDetailPage";
 import { TestPage } from "./pages/TestPage";
 import { UploadPage } from "./pages/UploadPage";
-import { useSession } from "./session";
+import { homeFor, useSession } from "./session";
 
-function RequireAuth({ children }) {
-  const { session } = useSession();
-  if (!session.studentId) return <Navigate to="/login" replace />;
-  return children;
+function BootScreen() {
+  return (
+    <div className="grid min-h-screen place-items-center">
+      <p className="font-mono text-xs text-mute" role="status">
+        Checking session…
+      </p>
+    </div>
+  );
 }
 
 function Shell({ children }) {
@@ -23,61 +33,128 @@ function Shell({ children }) {
   );
 }
 
+function HomeRedirect() {
+  const { session } = useSession();
+  if (!session.user) return <Navigate to="/login" replace />;
+  return <Navigate to={homeFor(session.user)} replace />;
+}
+
+function GuestOnly({ children }) {
+  const { session } = useSession();
+  if (session.user) return <Navigate to={homeFor(session.user)} replace />;
+  return children;
+}
+
+function RequireAuth({ role, children }) {
+  const { session } = useSession();
+  if (!session.user) return <Navigate to="/login" replace />;
+  if (role && session.user.role !== role) return <Navigate to={homeFor(session.user)} replace />;
+  return <Shell>{children}</Shell>;
+}
+
 export default function App() {
+  const { ready } = useSession();
+  if (!ready) return <BootScreen />;
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          <GuestOnly>
+            <LoginPage />
+          </GuestOnly>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <GuestOnly>
+            <RegisterPage />
+          </GuestOnly>
+        }
+      />
+      <Route path="/" element={<HomeRedirect />} />
+      <Route
+        path="/space"
+        element={
+          <RequireAuth role="student">
+            <MySpacePage />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/upload"
         element={
-          <RequireAuth>
-            <Shell>
-              <UploadPage />
-            </Shell>
+          <RequireAuth role="student">
+            <UploadPage />
           </RequireAuth>
         }
       />
       <Route
         path="/analysis"
         element={
-          <RequireAuth>
-            <Shell>
-              <AnalysisPage />
-            </Shell>
+          <RequireAuth role="student">
+            <AnalysisPage />
           </RequireAuth>
         }
       />
       <Route
         path="/test"
         element={
-          <RequireAuth>
-            <Shell>
-              <TestPage />
-            </Shell>
+          <RequireAuth role="student">
+            <TestPage />
           </RequireAuth>
         }
       />
       <Route
         path="/results"
         element={
-          <RequireAuth>
-            <Shell>
-              <ResultsPage />
-            </Shell>
+          <RequireAuth role="student">
+            <ResultsPage />
           </RequireAuth>
         }
       />
       <Route
-        path="/chat"
+        path="/chat/:chatId?"
         element={
-          <RequireAuth>
-            <Shell>
-              <ChatPage />
-            </Shell>
+          <RequireAuth role="student">
+            <ChatPage />
           </RequireAuth>
         }
       />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth role="teacher">
+            <DashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/activity"
+        element={
+          <RequireAuth role="teacher">
+            <ActivityPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/kb"
+        element={
+          <RequireAuth role="teacher">
+            <KbPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/students/:studentId"
+        element={
+          <RequireAuth role="teacher">
+            <StudentDetailPage />
+          </RequireAuth>
+        }
+      />
+      <Route path="*" element={<HomeRedirect />} />
     </Routes>
   );
 }

@@ -1,11 +1,13 @@
 """MongoDB reads and writes for the CodeLens collections.
 
 The HTTP layer and the agents call these functions. Nothing here talks to
-Chroma: proposed knowledge-base text stays in ``kb_pending`` until a teacher
-approves it.
+Chroma. Approved rows store ``chroma_ids`` for the vectors ``kb_update`` wrote;
+this module only keeps that list. Upload chunks live in ``kb_uploads`` until a
+teacher accepts them into ``kb_pending``.
 """
 
 import copy
+import re
 import uuid
 from datetime import datetime
 
@@ -642,8 +644,20 @@ async def insert_kb(
     reviewed_by: str | None = None,
     reviewed_at: datetime | None = None,
     created_at: datetime | None = None,
+    *,
+    title: str | None = None,
+    topic: str | None = None,
+    tags: list | None = None,
+    difficulty: str | None = None,
+    note_type: str | None = None,
+    origin: str | None = None,
+    proposer_name: str | None = None,
+    proposer_role: str | None = None,
+    reject_reason: str | None = None,
+    chroma_ids: list | None = None,
 ) -> str:
     db = await get_db()
+    now = created_at or utcnow()
     doc = {
         "content": content,
         "source": source,
@@ -652,7 +666,18 @@ async def insert_kb(
         "status": status,
         "reviewed_by": reviewed_by,
         "reviewed_at": reviewed_at,
-        "created_at": created_at or utcnow(),
+        "created_at": now,
+        "updated_at": now,
+        "title": title,
+        "topic": topic or "",
+        "tags": list(tags or []),
+        "difficulty": difficulty,
+        "type": note_type or "concept",
+        "origin": origin,
+        "proposer_name": proposer_name,
+        "proposer_role": proposer_role,
+        "reject_reason": reject_reason,
+        "chroma_ids": list(chroma_ids or []),
     }
     if legacy_id is not None:
         doc["legacy_id"] = legacy_id
@@ -672,40 +697,88 @@ async def find_kb(item_id: str) -> dict | None:
     return await db.kb_pending.find_one({"_id": oid})
 
 
-def kb_public(doc: dict) -> dict:
+async def users_by_ids(ids: list) -> dict:
+    oids = []
+    for value in ids:
+        oid = as_object_id(value) if value else None
+        if oid is not None:
+            oids.append(oid)
+    if not oids:
+        return {}
+    db = await get_db()
+    found = await db.users.find({"_id": {"$in": oids}}, {"name": 1, "role": 1}).to_list(length=len(oids))
+    return {str(doc["_id"]): {"name": doc.get("name"), "role": doc.get("role")} for doc in found}
+
+
+def kb_public(doc: dict, users: dict | None = None) -> dict:
+    proposed_by = doc.get("proposed_by")
+    user = (users or {}).get(str(proposed_by)) if proposed_by else None
+    tags = doc.get("tags") if isinstance(doc.get("tags"), list) else []
+    title = doc.get("title") or doc.get("query") or "Untitled"
     return {
         "id": str(doc["_id"]),
+        "title": title,
         "content": doc.get("content") or "",
+        "topic": doc.get("topic") or "",
+        "tags": [str(tag) for tag in tags if str(tag).strip()],
+        "difficulty": doc.get("difficulty") or None,
         "source": doc.get("source"),
-        "proposed_by": doc.get("proposed_by"),
+        "type": doc.get("type") or "concept",
+        "origin": doc.get("origin") or None,
+        "proposed_by": proposed_by,
+        "proposer_name": doc.get("proposer_name") or (user or {}).get("name"),
+        "proposer_role": doc.get("proposer_role") or (user or {}).get("role"),
         "status": doc.get("status") or "pending",
-        "query": doc.get("query"),
+        "query": doc.get("query") or doc.get("title"),
         "reviewed_by": doc.get("reviewed_by"),
         "reviewed_at": iso(doc.get("reviewed_at")),
+        "reject_reason": doc.get("reject_reason") or None,
         "created_at": iso(doc.get("created_at")),
+        "updated_at": iso(doc.get("updated_at") or doc.get("created_at")),
     }
+
+
+async def kb_public_many(docs: list[dict]) -> list[dict]:
+    users = await users_by_ids([doc.get("proposed_by") for doc in docs])
+    return [kb_public(doc, users) for doc in docs]
+
+
+async def kb_public_one(doc: dict) -> dict:
+    rows = await kb_public_many([doc])
+    return rows[0]
 
 
 async def list_pending_kb() -> list[dict]:
     db = await get_db()
     cursor = db.kb_pending.find({"status": "pending"}).sort("created_at", 1)
     rows = await cursor.to_list(length=500)
-    return [kb_public(row) for row in rows]
+    return await kb_public_many(rows)
 
 
-async def update_kb_content(item_id: str, content: str) -> dict:
+async def update_kb_fields(item_id: str, fields: dict, *, chroma_ids: list | None = None) -> dict:
     doc = await find_kb(item_id)
     if doc is None:
         raise LookupError(item_id)
-    if doc.get("status") != "pending":
-        raise ValueError("Only a pending item can be edited")
+    if doc.get("status") not in {"pending", "approved"}:
+        raise ValueError("Only a pending or approved item can be edited")
+    updates = dict(fields)
+    updates["updated_at"] = utcnow()
+    if chroma_ids is not None:
+        updates["chroma_ids"] = list(chroma_ids)
     db = await get_db()
-    await db.kb_pending.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
-    doc["content"] = content
-    return kb_public(doc)
+    await db.kb_pending.update_one({"_id": doc["_id"]}, {"$set": updates})
+    doc.update(updates)
+    return doc
 
 
-async def set_kb_status(item_id: str, status: str, reviewer_id: str) -> dict:
+async def set_kb_status(
+    item_id: str,
+    status: str,
+    reviewer_id: str,
+    *,
+    reject_reason: str | None = None,
+    chroma_ids: list | None = None,
+) -> dict:
     doc = await find_kb(item_id)
     if doc is None:
         raise LookupError(item_id)
@@ -713,11 +786,147 @@ async def set_kb_status(item_id: str, status: str, reviewer_id: str) -> dict:
         raise ValueError(f"Only a pending item can be {status}")
     db = await get_db()
     reviewed_at = utcnow()
-    await db.kb_pending.update_one(
-        {"_id": doc["_id"]},
-        {"$set": {"status": status, "reviewed_by": reviewer_id, "reviewed_at": reviewed_at}},
-    )
-    doc["status"] = status
-    doc["reviewed_by"] = reviewer_id
-    doc["reviewed_at"] = reviewed_at
+    updates = {
+        "status": status,
+        "reviewed_by": reviewer_id,
+        "reviewed_at": reviewed_at,
+        "updated_at": reviewed_at,
+        "reject_reason": reject_reason if status == "rejected" else None,
+    }
+    if chroma_ids is not None:
+        updates["chroma_ids"] = list(chroma_ids)
+    await db.kb_pending.update_one({"_id": doc["_id"]}, {"$set": updates})
+    doc.update(updates)
     return doc
+
+
+async def remove_kb(item_id: str) -> dict | None:
+    doc = await find_kb(item_id)
+    if doc is None:
+        return None
+    db = await get_db()
+    await db.kb_pending.delete_one({"_id": doc["_id"]})
+    return doc
+
+
+def _kb_query(*, q: str, topic: str, tag: str, note_type: str, source: str, start, end) -> dict:
+    query: dict = {}
+    if topic:
+        query["topic"] = topic
+    if tag:
+        query["tags"] = tag
+    if note_type:
+        query["type"] = note_type
+    if source:
+        query["source"] = source
+    created = {}
+    if start is not None:
+        created["$gte"] = start
+    if end is not None:
+        created["$lte"] = end
+    if created:
+        query["created_at"] = created
+    if q:
+        pattern = {"$regex": re.escape(q), "$options": "i"}
+        query["$or"] = [
+            {"title": pattern},
+            {"content": pattern},
+            {"topic": pattern},
+            {"query": pattern},
+            {"tags": pattern},
+        ]
+    return query
+
+
+async def search_kb_rows(*, q: str, topic: str, tag: str, note_type: str, source: str, start, end) -> list[dict]:
+    """Notes matching every filter except status. The caller counts and pages."""
+    db = await get_db()
+    query = _kb_query(q=q, topic=topic, tag=tag, note_type=note_type, source=source, start=start, end=end)
+    return await db.kb_pending.find(query).to_list(length=10_000)
+
+
+async def kb_facets() -> dict:
+    db = await get_db()
+    rows = await db.kb_pending.find({}, {"topic": 1, "tags": 1, "type": 1, "source": 1}).to_list(length=10_000)
+    topics: list[str] = []
+    tags: list[str] = []
+    types: list[str] = []
+    sources: list[str] = []
+
+    def push(bucket: list[str], value) -> None:
+        text = str(value or "").strip()
+        if text and text not in bucket:
+            bucket.append(text)
+
+    for row in rows:
+        push(topics, row.get("topic"))
+        push(types, row.get("type"))
+        push(sources, row.get("source"))
+        for tag in row.get("tags") or []:
+            push(tags, tag)
+    topics.sort(key=str.lower)
+    tags.sort(key=str.lower)
+    types.sort(key=str.lower)
+    sources.sort(key=str.lower)
+    return {"topics": topics, "tags": tags, "types": types, "sources": sources}
+
+
+async def insert_upload(doc: dict) -> str:
+    db = await get_db()
+    result = await db.kb_uploads.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def find_upload(upload_id: str) -> dict | None:
+    oid = as_object_id(upload_id)
+    if oid is None:
+        return None
+    db = await get_db()
+    return await db.kb_uploads.find_one({"_id": oid})
+
+
+async def list_uploads() -> list[dict]:
+    db = await get_db()
+    cursor = db.kb_uploads.find().sort("created_at", -1)
+    return await cursor.to_list(length=500)
+
+
+async def attach_upload(upload_id: str, item_id: str) -> None:
+    oid = as_object_id(upload_id)
+    if oid is None:
+        return
+    db = await get_db()
+    await db.kb_uploads.update_one({"_id": oid}, {"$set": {"kb_item_id": item_id, "status": "chunked", "progress": 100}})
+
+
+async def delete_upload(upload_id: str) -> bool:
+    oid = as_object_id(upload_id)
+    if oid is None:
+        return False
+    db = await get_db()
+    result = await db.kb_uploads.delete_one({"_id": oid})
+    return result.deleted_count == 1
+
+
+def upload_public(doc: dict) -> dict:
+    chunks = doc.get("chunks") if isinstance(doc.get("chunks"), list) else []
+    return {
+        "id": str(doc["_id"]),
+        "filename": doc.get("filename") or "",
+        "media_type": doc.get("media_type") or "",
+        "size": int(doc.get("size") or 0),
+        "status": doc.get("status") or "processing",
+        "progress": int(doc.get("progress") or 0),
+        "error": doc.get("error") or "",
+        "created_at": iso(doc.get("created_at")),
+        "kb_item_id": doc.get("kb_item_id") or None,
+        "chunks": [
+            {
+                "index": int(chunk.get("index", index)),
+                "title": str(chunk.get("title") or f"Chunk {index + 1}"),
+                "content": str(chunk.get("content") or ""),
+            }
+            for index, chunk in enumerate(chunks)
+            if isinstance(chunk, dict)
+        ],
+    }

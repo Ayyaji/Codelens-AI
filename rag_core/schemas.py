@@ -374,15 +374,128 @@ class KBItem(BaseModel):
     reviewed_by: str | None = None
     reviewed_at: str | None = None
     created_at: str | None = None
+    title: str | None = None
+    topic: str = ""
+    tags: list[str] = []
+    difficulty: str | None = None
+    type: str = "concept"
+    origin: str | None = None
+    proposer_name: str | None = None
+    proposer_role: str | None = None
+    reject_reason: str | None = None
+    updated_at: str | None = None
 
 
-class KBEdit(BaseModel):
+class KBCreate(BaseModel):
+    """Library create body. Limits are checked in ``kb_fields`` so the detail is one sentence."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    title: str | None = None
+    content: str | None = None
+    topic: str | None = None
+    tags: list[str] | None = None
+    difficulty: str | None = None
+    source: str | None = None
+    type: str | None = None
+    approve: bool | None = None
+
+
+class KBPatch(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    title: str | None = None
+    content: str | None = None
+    topic: str | None = None
+    tags: list[str] | None = None
+    difficulty: str | None = None
+    source: str | None = None
+    type: str | None = None
+
+
+class KBReject(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    reason: str | None = None
+
+
+class KBBulkRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ids: list[str] = []
+    action: str = ""
+    reason: str | None = None
+
+
+class KBBulkFailure(BaseModel):
+    id: str
+    detail: str
+
+
+class KBBulkResponse(BaseModel):
+    updated: list[KBItem]
+    failed: list[KBBulkFailure]
+
+
+class KBCounts(BaseModel):
+    pending: int = 0
+    approved: int = 0
+    rejected: int = 0
+
+
+class KBFacets(BaseModel):
+    topics: list[str] = []
+    tags: list[str] = []
+    types: list[str] = []
+    sources: list[str] = []
+
+
+class KBLibraryPage(BaseModel):
+    items: list[KBItem]
+    total: int
+    page: int
+    page_size: int
+    counts: KBCounts
+    facets: KBFacets
+
+
+class KBDeleted(BaseModel):
+    id: str
+    deleted: bool = True
+
+
+class KBChunk(BaseModel):
+    index: int
+    title: str
     content: str
 
-    @field_validator("content")
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        return _stripped(value)
+
+class KBUpload(BaseModel):
+    id: str
+    filename: str
+    media_type: str = ""
+    size: int = 0
+    status: Literal["processing", "chunked", "failed"]
+    progress: int = 0
+    error: str = ""
+    created_at: str | None = None
+    kb_item_id: str | None = None
+    chunks: list[KBChunk] = []
+
+
+class KBUploadApprove(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_indexes: list[int] | None = None
+    title: str | None = None
+    topic: str | None = None
+    tags: list[str] | None = None
+    difficulty: str | None = None
+
+
+class KBUploadApproved(BaseModel):
+    upload: KBUpload
+    item: KBItem
 
 
 class StoredQuestion(BaseModel):

@@ -1,6 +1,6 @@
 # CodeLens API contract (frontend)
 
-The React client calls the FastAPI app. Paths below match `rag_core/schemas.py` and `rag_core/api.py`.
+The React client calls the FastAPI app. Paths and JSON below follow `rag_core/schemas.py` and `rag_core/api.py`. Where the UI computes something the API does not send, that is called out.
 
 Base URL: `VITE_API_URL` (no trailing slash). When the variable is missing the client uses `http://localhost:8000`. The three-server deploy sets it to the relative path `/api`: Nginx on the frontend forwards `/api/...` to FastAPI, so the browser stays on one origin. An S3 build sets it to the absolute HTTPS origin of the API instead, and `CORS_ORIGINS` on the API must list that site. The simple deploy (Vercel plus two EC2 instances) sets `VITE_API_URL` to the API's HTTPS address. `CORS_ORIGIN_REGEX` then allows every `https://*.vercel.app` site, and `CORS_ORIGINS` lists any extra site such as a custom domain. With both unset, any origin is allowed. The Vite dev origins stay allowed when `CORS_ORIGINS` is set, so a local client can call a deployed API. Send the access token as a header, not a cookie:
 
@@ -8,41 +8,69 @@ Base URL: `VITE_API_URL` (no trailing slash). When the variable is missing the c
 Authorization: Bearer <token>
 ```
 
-`src/api/client.js` reads that token from `localStorage` key `codelens.token` (`TOKEN_STORAGE_KEY`). `registerAccount` and `loginAccount` store it. Logout clears it. The login page in this folder is still the student-id gate; the email and password screens (and My Space, and the teacher dashboard) are separate pages.
+`src/api/client.js` reads that token from `localStorage` key `codelens.token` (`TOKEN_STORAGE_KEY`). `getToken` and `setToken` are the accessors. `registerAccount` and `loginAccount` store it. Logout clears it. The signed-in user (`id`, `name`, `email`, `role`) lives in the same React session as the in-progress test. A refresh calls `GET /auth/me` and puts that user back. The old student-id field is gone.
 
-Errors are FastAPI's `{"detail": "<message>"}`. `detail` may be a string or a validation list. The client surfaces it as text. Statuses in use include 400, 401 (missing or bad token), 403 (disabled account, or a student calling a teacher route), 404, 409 (duplicate email, or a knowledge-base item that is no longer pending), 413, 422, and 502.
+Errors are FastAPI's `{"detail": "<message>"}`. `detail` may be a string or a validation list. The client surfaces it as text. Statuses in use include 400, 401 (missing or bad token, or a wrong login), 403 (disabled account, a student calling a teacher route, or a teacher trying to self-register), 404, 409 (duplicate email, or a knowledge-base item that is no longer pending), 413, 422, and 502.
 
 Every route except `POST /auth/register`, `POST /auth/login`, `GET /`, and `GET /health` requires the bearer token. `GET /health` returns `{"status":"ok","mongo":"ok"}` or 503 when MongoDB cannot be reached. It does not load the embedding model. The server uses the token's user. A `student_id` in the body is ignored. Teachers cannot self-register; create them with `python -m rag_core.create_teacher`.
 
-`POST /ask` is never mocked. Every other call the current screens make uses `src/mocks/` only when `VITE_USE_MOCKS=true`, or when its name appears in `VITE_MOCK_ENDPOINTS`. The committed default is `VITE_USE_MOCKS=false`.
+A 401 on any route other than login or register clears the token and returns to `/login`. A 403 whose message says the account is disabled does the same. A 403 `Teacher access required` does not.
+
+`src/mocks/` answers a call when `VITE_USE_MOCKS=true`, or when its name appears in `VITE_MOCK_ENDPOINTS`. The committed default is `VITE_USE_MOCKS=false`. With the flag on, `POST /ask` is mocked too, so My Space and the dashboard work with no API. Names: `upload`, `analyse`, `generate`, `submit`, `run`, `auth`, `ask`, `chats`, `persona`, `history`, `overview`, `students`, `activity`, `kb`.
 
 Directive values on the wire are lowercase: `full`, `hint`, `gentle`, `break`. The UI prints them as FULL / HINT / GENTLE / BREAK.
 
-The old open routes `GET /pending-kb`, `POST /approve-kb/{id}`, `POST /reject-kb/{id}`, and `GET /sessions` are removed.
+The old open routes `GET /pending-kb`, `POST /approve-kb/{id}`, `POST /reject-kb/{id}`, and `GET /sessions` are not registered.
+
+## Mismatches
+
+Checked against PR #3. This client follows the shapes in that branch. These are the places a reader of the short path list, or of PR #3's frontend diff, can be surprised.
+
+1. PR #3's `client.js` never mocks `POST /ask`. This one does when `VITE_USE_MOCKS=true` or `ask` is listed, so the guidance chat works offline. With the flag off, `/ask` is live. The body is `{ "query", "chat_id"? }`. `student_id` is not sent. The API ignores it if a client still sends it. `profile` is no longer a public flag.
+2. `GET /auth/me` returns `{id, name, email, role}` and does not include `disabled`. A disabled token fails earlier with 403 `Account disabled`.
+3. Registering an email that already exists is 409 `Email is already registered`. A password outside 8–72 characters is 422. FastAPI sends `detail` as a list, and Pydantic prefixes the validator text with `Value error, `. The client strips that prefix and shows `Password must be 8 to 72 characters.` Login does not use that length rule: a wrong password is 401 `Invalid email or password`, including when the account is disabled and the password is also wrong. Disabled plus the right password is 403 `Account disabled`.
+4. `{"role": "teacher"}` on register is 403 `Teachers cannot self-register`. The form does not send `role`.
+5. Search on the students table is done in the browser. `GET /teacher/students` has no query parameter.
+6. `GET /teacher/activity` items include `name` and `email`. `recent_activity` inside `GET /teacher/students/{id}` does not, because the backend only joins users for the feed. The UI treats both fields as optional.
+7. `GET /teacher/students/{id}/chats/{chat_id}` exists on PR #3 and is used to read a transcript. It was not in the short path list. The body is the same chat object as `GET /me/chats/{chat_id}`.
+8. History tests and persona scores are `{test_id, score, created_at}` only. Per-attempt weak topics are not on that object. Persona `weak_topics` and `mistake_patterns` are the latest submission.
+9. `directive_counts.break` is the JSON key. `break_` is only the Python attribute name, because `break` is a keyword. The client also accepts `break_` if a serializer ever emits it.
+10. Overview `avg_score` is `0` when nobody has submitted. A student's `avg_score` is `null` in that case. `active_today` counts distinct students with any activity since UTC midnight.
+11. Reset returns `{id, reset: true}`. It deletes chats, the persona, submissions, activity, job descriptions, and generated tests. The account and the disabled flag stay. Knowledge-base items they proposed stay in the queue. The mock has no generated-test collection separate from submissions.
+12. Real chat, user, submission, and knowledge-base ids are Mongo ObjectId strings. Job description ids are uuid hex. The client treats every id as an opaque string. The mock uses readable ids such as `stu_ada` and `chat_ada_none`.
+13. The library page calls `GET /teacher/kb`, `POST /teacher/kb`, `PUT` with the full note, `DELETE`, `POST /teacher/kb/bulk`, and the `/teacher/kb/uploads` routes. Those are implemented. `GET /teacher/kb/pending` and approve/reject remain. A content-only `PUT` still edits a pending note. The library sends the fuller body, including for a note that is already approved.
 
 ---
 
 ## POST /auth/register
 
+Mock name: `auth`.
+
 ```json
 { "name": "Ada", "email": "ada@school.edu", "password": "at least 8 characters" }
 ```
 
-`role` may be omitted. `"role": "teacher"` is 403. Response:
+`name` is trimmed, at most 80 characters. `email` is lowercased. `password` must be 8 to 72 characters. Response:
 
 ```json
 { "token": "<jwt>", "user": { "id": "<object id>", "name": "Ada", "email": "ada@school.edu", "role": "student" } }
 ```
 
+The new user is always a student.
+
 ## POST /auth/login
+
+Mock name: `auth`.
 
 ```json
 { "email": "ada@school.edu", "password": "at least 8 characters" }
 ```
 
-Same response shape. A disabled account is 403 `Account disabled`. An unknown email or a wrong password is 401 with the same `detail`.
+Same response shape as register.
 
 ## GET /auth/me
+
+Mock name: `auth`.
 
 Returns the user object `{id, name, email, role}`.
 
@@ -50,7 +78,7 @@ Returns the user object `{id, name, email, role}`.
 
 ## POST /ask
 
-Live only. Requires the bearer token.
+Mock name: `ask`. Mocked only when the flag is on. Requires the bearer token.
 
 Request:
 
@@ -58,7 +86,7 @@ Request:
 { "query": "Why does this raise TypeError?", "chat_id": "optional existing chat" }
 ```
 
-Omit `chat_id` to open a chat. A `chat_id` owned by someone else is 404.
+Omit `chat_id` to open a chat. The function signature is `ask({ query, chatId })`. A `chat_id` owned by someone else is 404 `Chat not found`.
 
 Response:
 
@@ -71,13 +99,21 @@ Response:
 }
 ```
 
+`student_id`, `query`, `response_time`, and `profiling` are ignored if the API still sends them.
+
 ## GET /me/chats
+
+Mock name: `chats`.
 
 ```json
 [{ "chat_id": "66f0...", "title": "Why does this raise TypeError?", "updated_at": "2026-10-21T05:00:00Z" }]
 ```
 
+Newest first. The array is the body. There is no wrapper object.
+
 ## GET /me/chats/{chat_id}
+
+Mock name: `chats`.
 
 ```json
 {
@@ -90,7 +126,11 @@ Response:
 }
 ```
 
+A user message has `directive` and `agent_used` set to null.
+
 ## GET /me/persona
+
+Mock name: `persona`.
 
 ```json
 {
@@ -101,9 +141,11 @@ Response:
 }
 ```
 
-Empty lists when the student has no persona yet. `weak_topics` and `mistake_patterns` are the latest submission. `scores` is the attempt history kept on the persona.
+Empty lists when the student has no persona yet. `weak_topics` and `mistake_patterns` are the latest submission. `scores` is the attempt history kept on the persona, oldest first.
 
 ## GET /me/history
+
+Mock name: `history`.
 
 ```json
 {
@@ -112,7 +154,9 @@ Empty lists when the student has no persona yet. `weak_topics` and `mistake_patt
 }
 ```
 
-`tests` are scored attempts (submission ids), newest first. `jds` are the job descriptions this student uploaded.
+`tests` are scored attempts (submission ids), newest first. `jds` are the job descriptions this student uploaded, newest first. The persona's `jds` follow `jd_ids` order instead.
+
+---
 
 ---
 
@@ -299,13 +343,13 @@ The results page splits on the first colon, shows the mistake with underscores a
 
 `guidance.message` and `guidance.next_steps` are shown next to the score. `guidance.directive` uses the same badge as the chat.
 
-A client-supplied `student_id` is ignored. The attempt is stored for the token's user, the persona is updated, and an activity row is written for the judgment layer.
+A client-supplied `student_id` is ignored. The attempt is stored for the token's user. `submitTest({ jdId, answers })` does not send one. The mock also appends the score onto the signed-in student's persona so My Space shows the attempt.
 
 ---
 
 ## Teacher routes
 
-All of these are 403 for a student.
+All of these are 403 `Teacher access required` for a student. Mock names: `overview`, `students`, `activity`, `kb`. Student chats on the detail page use `students`.
 
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
@@ -317,13 +361,91 @@ All of these are 403 for a student.
 | `PATCH` | `/teacher/students/{id}` | `{disabled: true}` | the student list item |
 | `POST` | `/teacher/students/{id}/reset` | | `{id, reset: true}` |
 | `GET` | `/teacher/activity?limit=` | | newest student events, `limit` 1–200, default 50 |
-| `GET` | `/teacher/kb/pending` | | pending notes |
-| `PUT` | `/teacher/kb/{id}` | `{content}` | the edited note |
-| `POST` | `/teacher/kb/{id}/approve` | | the note, `status: "approved"`. This is the only call that writes the note to Chroma |
-| `POST` | `/teacher/kb/{id}/reject` | | the note, `status: "rejected"` |
+| `GET` | `/teacher/kb/pending` | | pending notes, oldest first. The library page uses `GET /teacher/kb` below. |
+| `PUT` | `/teacher/kb/{id}` | any of `title`, `content`, `topic`, `tags`, `difficulty`, `source`, `type` | the edited note. `{content}` alone still works. Status does not change. |
+| `POST` | `/teacher/kb/{id}/approve` | | the note, `status: "approved"`. Writes the note to Chroma |
+| `POST` | `/teacher/kb/{id}/reject` | `{reason}` optional | the note, `status: "rejected"` |
 
-`directive_counts` is `{full, hint, gentle, break}`. `avg_score` is the mean of every submission, `0` when there are none. A student's `avg_score` is `null` when they have not submitted. `active_today` counts distinct students with any activity since UTC midnight.
+`directive_counts` is `{full, hint, gentle, break}`.
 
-`POST /teacher/students/{id}/reset` deletes that student's chats, persona, submissions, activity, job descriptions, and generated tests. The account and the disabled flag stay. Knowledge-base items they proposed stay in the queue.
+`user` on the detail is `{id, name, email, role, disabled, created_at}`. `persona` on the detail adds `learning_notes` and `updated_at` to the student persona. `tests` matches history tests. `recent_activity` is the last 20 events for that student.
 
-Approving a note that is not pending is 409. Rejecting does not write to Chroma. Editing does not write to Chroma.
+An activity item is `{id, user_id, type, detail, ts}`. The feed also sends `name` and `email`. `detail` is an object. Guidance rows carry `query`, `agent_used`, `response_time`, `error_type`, `topic`, and `directive`. A test submission adds `score`, `jd_id`, and `test_id`. An account row is `{action, by}` where `action` is `disabled`, `enabled`, or `reset`.
+
+A note is the object in the library section below. Older rows may only have had `{id, content, source, proposed_by, status, query, reviewed_by, reviewed_at, created_at}`; the API fills `title` from `query`, `type` with `concept`, and the other fields with empty or null. `status` is `pending`, `approved`, or `rejected`. Approving or rejecting a note that is not pending is 409. Rejected notes cannot be edited (409 `Only a pending or approved item can be edited`). Blank content is 422. Rejecting does not write to Chroma. Editing a pending note does not write to Chroma. Editing an approved note's title, content, or source replaces its Chroma vectors.
+
+The dashboard charts plot `directive_counts` and each student's `avg_score`. Those charts are not extra API fields. The students search box filters the array already returned. `pending_kb` on the overview is still the count of notes with `status: "pending"`.
+
+## Knowledge-base library
+
+Implemented on the API. The teacher library calls these paths on `VITE_API_URL`. With `VITE_USE_MOCKS=true` (or the `kb` mock name) the fixtures answer them instead. Every route requires a teacher. A student receives 403 `Teacher access required`.
+
+Rows live in MongoDB `kb_pending`. Upload chunks live in `kb_uploads` until they are accepted. Approved text is also written to the Chroma collection at `CODELENS_KB` (directory `codelens_kb`) through `write_kb_document`, the same call `POST /teacher/kb/{id}/approve` uses. The stored `chroma_ids` are how a later delete or edit removes those vectors. `python -m rag_core.build_kb` is still the offline seed and is separate from these routes.
+
+A knowledge item:
+
+```json
+{
+  "id": "kb_arrays",
+  "title": "Arrays: index arithmetic",
+  "content": "Markdown body",
+  "topic": "Arrays",
+  "tags": ["arrays", "dsa"],
+  "difficulty": "easy",
+  "source": "textbook",
+  "type": "concept",
+  "origin": "teacher",
+  "status": "approved",
+  "proposed_by": "tch_rao",
+  "proposer_name": "Meera Rao",
+  "proposer_role": "teacher",
+  "query": "Arrays: index arithmetic",
+  "reviewed_by": "tch_rao",
+  "reviewed_at": "2026-10-21T05:00:00Z",
+  "reject_reason": null,
+  "created_at": "2026-10-21T05:00:00Z",
+  "updated_at": "2026-10-21T05:00:00Z"
+}
+```
+
+`difficulty` is `easy`, `medium`, `hard`, or null. `source` is `teacher`, `student`, `ai`, `web`, `upload`, or `textbook`. `type` is `concept`, `qa`, `college`, or `document`. `origin` is who created the row: `teacher`, `student`, `ai`, or `upload`. `status` is `pending`, `approved`, or `rejected`.
+
+`POST /teacher/kb` is teacher-only. The server sets `origin` to `teacher` from the caller and ignores a client-supplied origin. `approve` defaults to true, which writes Chroma and stores the item as `approved`. `approve: false` leaves it `pending` and does not write Chroma. If Chroma raises, the row stays `pending` and the response is 502 `Could not write to the knowledge base`. There is no student write route. The guide still stages web notes with `origin: "ai"` and `status: "pending"`; those become searchable only through approve.
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| `GET` | `/teacher/kb` | | a page, below |
+| `POST` | `/teacher/kb` | `{title, content, topic, tags, difficulty, source, type, approve?}` | the item |
+| `GET` | `/teacher/kb/{id}` | | the item |
+| `PUT` | `/teacher/kb/{id}` | any of `title`, `content`, `topic`, `tags`, `difficulty`, `source`, `type` | the item. Pending and approved rows can be edited. Status does not change. |
+| `DELETE` | `/teacher/kb/{id}` | | `{id, deleted: true}` |
+| `POST` | `/teacher/kb/bulk` | `{ids, action, reason?}` | `{updated: [items], failed: [{id, detail}]}` |
+| `POST` | `/teacher/kb/uploads` | multipart field `file` | an upload record |
+| `GET` | `/teacher/kb/uploads` | | upload records, newest first |
+| `POST` | `/teacher/kb/uploads/{id}/approve` | `{chunk_indexes?, title?, topic?, tags?, difficulty?}` | `{upload, item}` |
+| `DELETE` | `/teacher/kb/uploads/{id}` | | `{id, deleted: true}` |
+
+`GET /teacher/kb` query params, all optional: `q`, `status`, `topic`, `tag`, `type`, `source`, `from`, `to`, `page` (default 1), `page_size` (default 8, max 50). `from` and `to` are `YYYY-MM-DD` on `created_at`, inclusive. `q` matches title, content, topic, tags, and query. Pending rows are oldest first. Other statuses are newest `updated_at` first.
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 8,
+  "counts": { "pending": 0, "approved": 0, "rejected": 0 },
+  "facets": { "topics": [], "tags": [], "types": [], "sources": [] }
+}
+```
+
+`counts` respect every filter except `status`, so the Pending / Approved / Rejected tabs can show how many notes the other filters would leave in each tab. `facets` are taken from the whole library.
+
+`POST /teacher/kb/bulk` `action` is `approve` or `reject`. Reject requires a non-empty `reason`. Ids that are missing or not pending go in `failed` and do not fail the whole call. An id whose Chroma write fails stays `pending` and is listed in `failed` with `Could not write to the knowledge base`. Single `POST /teacher/kb/{id}/reject` accepts `{reason}`. A blank reason is 422. Omitting the body still rejects.
+
+`DELETE /teacher/kb/{id}` removes the Mongo row. An approved row's Chroma vectors are removed first. If that delete fails, the row stays and the response is 502. Pending and rejected rows have no vectors to remove.
+
+`PUT` of an approved note rewrites Chroma when `title`, `content`, or `source` changes, then drops the previous vectors. A change that only touches topic, tags, difficulty, or type does not call Chroma. Pending edits never call Chroma. `approve` on a `PUT` body is ignored, so saving an edit does not change status.
+
+Upload accepts `.pdf`, `.docx`, `.txt`, `.md`, and `.markdown` up to 5 MB. Anything else is 415 `Upload a PDF, DOCX, TXT, or MD file.` Over the limit is 413 `That file is larger than 5 MB.` The record is `{id, filename, media_type, size, status, progress, error, created_at, kb_item_id, chunks}`. `status` is `processing`, `chunked`, or `failed`. This server chunks during the POST, so the response is already `chunked` or `failed` rather than left on `processing`. A file that cannot be read is still 200, with `status: "failed"` and `error` set. A chunk is `{index, title, content}`. Approving chunks writes one Chroma document and one `type: "document"`, `source: "upload"`, `origin: "upload"` item with `status: "approved"`, and sets `kb_item_id`. If that write fails, no library row is kept and the response is 502. Approving before `chunked`, or approving twice, is 409. Discarding an upload that already has `kb_item_id` is 409 `That upload is already in the library`.
+
+Title is required, at most 140 characters. Content is required, at most 20,000 characters. Topic is required, at most 60 characters. At most 8 tags, each at most 32 characters, stored lowercase. Unknown difficulty, source, or type is 422. A missing note is 404. A missing upload is 404 `Upload not found`. Students receive 403 `Teacher access required`. `GET /teacher/kb` with `page` past the last page returns the last page. `page_size` above 50 is 422.
