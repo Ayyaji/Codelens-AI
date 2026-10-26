@@ -315,7 +315,7 @@ users 1──* kb_pending   (proposed_by / reviewed_by)
 
 ## API
 
-Every route except `POST /auth/register` and `POST /auth/login` requires `Authorization: Bearer <token>`. The token is HS256, lasts 7 days, and carries `sub` and `role`. Role and the disabled flag are loaded from MongoDB on each request. A disabled account gets 403. Register always creates a student. A body that asks for `role: teacher` is 403. Teachers are created with `python -m rag_core.create_teacher`.
+Every route except `GET /`, `GET /health`, `POST /auth/register`, and `POST /auth/login` requires `Authorization: Bearer <token>`. The token is HS256, lasts 7 days, and carries `sub` and `role`. Role and the disabled flag are loaded from MongoDB on each request. A disabled account gets 403. Register always creates a student. A body that asks for `role: teacher` is 403. Teachers are created with `python -m rag_core.create_teacher`.
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
@@ -373,9 +373,16 @@ rag_core/kb_update.py      pending queue and the Chroma write
 rag_core/agents/           debug, concept, hint, web, JD, test, diagnosis, guide
 rag_core/sandbox/          subprocess runner
 knowledge_base/            notes used when a student is debugging
-docker-compose.yml         MongoDB 7 on port 27017
+docker-compose.yml         MongoDB 7.0 on port 27017
+deploy/simple/             Vercel + two EC2 instances (beginner deploy)
 tests/                     auth, judgment, scoring, sandbox, schemas
 ```
+
+## AWS
+
+The beginner path puts the React app on Vercel and runs the API and MongoDB as two EC2 instances in the default Mumbai VPC. The console clicks and the two setup commands are in [docs/DEPLOY_SIMPLE.md](docs/DEPLOY_SIMPLE.md).
+
+A three-server layout in a custom VPC (Nginx, the API, and a private database) is the advanced option. That guide, the security-group table, and the teardown are in [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).
 
 ## Team
 

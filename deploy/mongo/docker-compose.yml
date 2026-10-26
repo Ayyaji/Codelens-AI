@@ -1,0 +1,28 @@
+# MongoDB with auth, on the database instance. The data directory is the 20 GB
+# gp3 volume mounted at /opt/codelens/mongo. Port 27017 is bound to loopback
+# and to this instance's private IP. The security group is what limits it to
+# the backend instance.
+#
+# wiredTigerCacheSizeGB is 0.25 so a t3.micro (1 GiB) is not consumed by the
+# cache. The official image enables --auth when the root user variables are set.
+
+name: codelens-mongo
+
+services:
+  mongo:
+    image: mongo:7.0
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+    env_file:
+      - /opt/codelens/mongo.env
+    volumes:
+      - /opt/codelens/mongo/db:/data/db
+      - ./init/01-app-user.sh:/docker-entrypoint-initdb.d/01-app-user.sh:ro
+    ports:
+      - "127.0.0.1:27017:27017"
+      - "${MONGO_PRIVATE_IP:?set MONGO_PRIVATE_IP}:27017:27017"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

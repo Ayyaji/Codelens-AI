@@ -1,0 +1,14 @@
+# Caddy terminates HTTPS and forwards to the API container.
+# PUBLIC_HOST is the domain, or <elastic-ip-with-dashes>.sslip.io.
+{$PUBLIC_HOST} {
+	encode gzip
+	request_body {
+		max_size 4MB
+	}
+	reverse_proxy api:8000 {
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
+		}
+	}
+}

@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pymongo.errors import DuplicateKeyError
 
 from rag_core.agents.diagnoser import diagnose
@@ -30,6 +31,7 @@ from rag_core.auth import (
     verify_password,
     warn_default_secret,
 )
+from rag_core.config import cors_origin_regex, cors_origins
 from rag_core.judgment import extract_error_type
 from rag_core.kb_update import approve_pending, edit_pending, pending_items, reject_pending
 from rag_core.llm import init_clients
@@ -98,6 +100,7 @@ def configure_logging() -> None:
 async def lifespan(app: FastAPI):
     configure_logging()
     warn_default_secret()
+    logger.info("cors origins=%s", ",".join(cors_origins()))
     await ping()
     init_clients()
     warm_retrieval()
@@ -116,20 +119,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# The Vite dev server is http://localhost:5173 (`npm run dev`) and
-# http://localhost:4173 (`npm run preview`). 127.0.0.1 is listed too, because
-# Windows browsers sometimes open that host instead of localhost. "*" keeps
-# any other client able to call the API. Bearer tokens are headers, not cookies.
-VITE_DEV_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:4173",
-    "http://127.0.0.1:4173",
-]
-
+# Bearer tokens are headers, not cookies, so credentials stay off.
+# The three-server deploy is same-origin: Nginx on the frontend proxies /api
+# and the browser never calls port 8000. The simple deploy is not: the site
+# is on Vercel and the API is on another host. CORS_ORIGIN_REGEX allows
+# https://*.vercel.app, and CORS_ORIGINS lists any extra site (CloudFront,
+# or a custom domain). With both unset, local development allows any origin.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", *VITE_DEV_ORIGINS],
+    allow_origins=cors_origins(),
+    allow_origin_regex=cors_origin_regex(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -154,6 +153,22 @@ def root():
         "description": "Adaptive RAG assistant for JD-based interview readiness",
         "modules": ["auth", "jd_understanding", "test_and_guide", "teacher"],
     }
+
+
+@app.get("/health", tags=["meta"])
+async def health():
+    """Liveness and MongoDB reachability. No authentication, no model load.
+
+    The frontend Nginx proxies ``/api/health`` here, and Docker uses it
+    directly. A MongoDB failure is 503 so the container is not marked healthy
+    while the database is unreachable. The body never includes the URI.
+    """
+    try:
+        await ping(quiet=True)
+    except Exception as exc:
+        logger.warning("health check: mongodb unreachable (%s)", type(exc).__name__)
+        return JSONResponse({"status": "degraded", "mongo": "error"}, status_code=503)
+    return {"status": "ok", "mongo": "ok"}
 
 
 @app.post("/auth/register", response_model=AuthResponse, tags=["auth"])
