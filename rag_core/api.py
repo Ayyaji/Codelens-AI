@@ -51,9 +51,10 @@ from rag_core.kb_update import (
     search_library,
     uploads,
 )
-from rag_core.llm import init_clients
+from rag_core.llm import AIBusy, init_clients
 from rag_core.mongo import close_mongo, ping
 from rag_core.pipeline import run_pipeline
+from rag_core.class_tests.routes import router as class_test_router
 from rag_core.sandbox.runner import run_code
 from rag_core.schemas import (
     ActivityItem,
@@ -147,12 +148,53 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+class _UnhandledErrorMiddleware:
+    """JSON 500 for errors that escape the route handlers.
+
+    Starlette's ServerErrorMiddleware is the outermost layer and re-raises
+    after writing the 500, so that response never passes through CORS. The
+    browser then reports a network error and hides ``detail``. This layer
+    sits inside CORSMiddleware, writes a generic JSON body, and does not
+    re-raise. The exception text stays in the server log.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def track(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, track)
+        except Exception as exc:
+            if started:
+                raise
+            logger.exception("unhandled error (%s)", type(exc).__name__)
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Something went wrong. Please try again."},
+            )
+            await response(scope, receive, send)
+
+
 # Bearer tokens are headers, not cookies, so credentials stay off.
 # The three-server deploy is same-origin: Nginx on the frontend proxies /api
 # and the browser never calls port 8000. The simple deploy is not: the site
 # is on Vercel and the API is on another host. CORS_ORIGIN_REGEX allows
 # https://*.vercel.app, and CORS_ORIGINS lists any extra site (CloudFront,
 # or a custom domain). With both unset, local development allows any origin.
+# ``add_middleware`` inserts at the front, so the error layer is registered
+# first and CORS stays outside it.
+app.add_middleware(_UnhandledErrorMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
@@ -161,6 +203,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(class_test_router)
+
+
+@app.exception_handler(AIBusy)
+async def ai_busy(_request: Request, exc: AIBusy):
+    """503 when every Groq key is rate-limited. CORS still wraps this response."""
+    return JSONResponse(status_code=503, content={"detail": exc.detail})
 
 
 def _text_answer(answer) -> str:
@@ -179,7 +229,7 @@ def root():
     return {
         "message": "CodeLens AI is running",
         "description": "Adaptive RAG assistant for JD-based interview readiness",
-        "modules": ["auth", "jd_understanding", "test_and_guide", "teacher"],
+        "modules": ["auth", "jd_understanding", "test_and_guide", "class_tests", "teacher"],
     }
 
 

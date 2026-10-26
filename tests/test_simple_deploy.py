@@ -143,6 +143,31 @@ def test_failed_mongo8_datadir_is_cleared_only_when_no_uri_was_saved(tmp_path):
     assert "motor>=3.6.0" in prod and "pymongo>=4.9.0" in prod
 
 
+def test_groq_key_list_accepts_one_or_five_and_rejects_six():
+    one = _bash("source deploy/simple/lib.sh && normalize_groq_keys ' gsk_one '")
+    assert one.splitlines() == ["gsk_one"]
+    many = _bash(
+        "source deploy/simple/lib.sh && "
+        "normalize_groq_keys ' gsk_a, gsk_b ,gsk_c,gsk_d,gsk_e '"
+    )
+    assert many.splitlines() == ["gsk_a", "gsk_b", "gsk_c", "gsk_d", "gsk_e"]
+    rejected = subprocess.run(
+        ["bash", "-c", "source deploy/simple/lib.sh && normalize_groq_keys 'a,b,c,d,e,f'"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "at most 5" in rejected.stderr
+    assert "gsk_" not in rejected.stderr
+    script = (SIMPLE / "backend-setup.sh").read_text(encoding="utf-8")
+    assert "GROQ_API_KEYS" in script
+    assert "normalize_groq_keys" in script
+    assert 'write_env GROQ_API_KEYS' in script
+    assert "echo \"$GROQ_API_KEY\"" not in script
+    assert "echo \"$GROQ_API_KEYS\"" not in script
+
+
 def test_backend_setup_uses_caddy_swap_and_vercel_cors():
     text = (SIMPLE / "backend-setup.sh").read_text(encoding="utf-8")
     compose = (SIMPLE / "docker-compose.yml").read_text(encoding="utf-8")

@@ -300,7 +300,6 @@ async def apply_attempt(
                 "weak_topics": list(weak_topics),
                 "mistake_patterns": list(mistake_patterns),
             },
-            "$addToSet": {"jd_ids": jd_id},
             "$push": {
                 "scores": {
                     "$each": [
@@ -317,6 +316,8 @@ async def apply_attempt(
         },
         upsert=True,
     )
+    if jd_id:
+        await db.personas.update_one({"user_id": user_id}, {"$addToSet": {"jd_ids": jd_id}})
 
 
 async def insert_jd(user_id: str, text: str, filename: str, digest: str) -> str:
@@ -632,6 +633,7 @@ async def wipe_student(user_id: str) -> None:
     await db.activity.delete_many({"user_id": user_id})
     await db.jds.delete_many({"user_id": user_id})
     await db.tests.delete_many({"user_id": user_id})
+    await db.class_attempts.delete_many({"user_id": user_id})
 
 
 async def insert_kb(

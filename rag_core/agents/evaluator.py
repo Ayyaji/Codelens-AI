@@ -91,7 +91,11 @@ Failures:
         data = complete_json("large", prompt)
         text = str(data.get("explanation") or "").strip()
         return text or "The answer did not match the expected result."
-    except Exception:
+    except Exception as exc:
+        from rag_core.llm import AIBusy
+
+        if isinstance(exc, AIBusy):
+            raise
         return (
             "The answer did not match the expected result. "
             "Compare your output with the sample and check the edge cases."

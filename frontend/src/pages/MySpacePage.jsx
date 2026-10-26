@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getHistory, getPersona, listMyChats } from "../api/client";
+import { getHistory, getPersona, listClassTests, listMyChats } from "../api/client";
+import { ClassTestList } from "./ClassTestsPage";
 import { PersonaPanel } from "../components/PersonaPanel";
 import { ErrorBanner, LoadingLine, PageHeader, btn, btnGhost } from "../components/ui";
 import { formatScore, formatWhen } from "../lib/format";
@@ -14,6 +15,7 @@ export function MySpacePage() {
   const [history, setHistory] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [classTests, setClassTests] = useState([]);
 
   useEffect(() => {
     let cancel = false;
@@ -30,6 +32,13 @@ export function MySpacePage() {
       })
       .finally(() => {
         if (!cancel) setLoading(false);
+      });
+    listClassTests()
+      .then((rows) => {
+        if (!cancel) setClassTests(rows);
+      })
+      .catch(() => {
+        if (!cancel) setClassTests([]);
       });
     return () => {
       cancel = true;
@@ -85,6 +94,15 @@ export function MySpacePage() {
         </section>
         {persona ? <PersonaPanel persona={persona} /> : <div />}
       </div>
+      <section className="mt-4 rounded-xl border border-line bg-panel p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Tests</h2>
+          <Link to="/class-tests" className="text-xs text-hint hover:underline">
+            Open all
+          </Link>
+        </div>
+        <ClassTestList tests={classTests} />
+      </section>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <section className="rounded-xl border border-line bg-panel p-5">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Job descriptions</h2>
@@ -107,7 +125,7 @@ export function MySpacePage() {
           )}
         </section>
         <section className="rounded-xl border border-line bg-panel p-5">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Tests</h2>
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Practice scores</h2>
           {tests.length ? (
             <ul className="mt-3 divide-y divide-line">
               {tests.map((test) => (

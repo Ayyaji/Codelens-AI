@@ -170,6 +170,7 @@ export function friendlyError(error) {
   if (status === 409 && /email/i.test(message)) return "Email is already registered.";
   if (status === 403 && /disabled/i.test(message)) return "This account is disabled. Ask a teacher to enable it.";
   if (status === 403 && /self-register|teacher/i.test(message)) return "Teachers cannot self-register.";
+  if (status === 503) return message || "AI service is busy, please try again in a few seconds.";
   return message;
 }
 
@@ -517,7 +518,11 @@ async function request(path, { method = "GET", json, body } = {}) {
   }
 
   if (!response.ok) {
-    throw new ApiError(detailMessage(data?.detail, response.statusText || "Request failed"), response.status);
+    const fallback =
+      response.status === 503
+        ? "AI service is busy, please try again in a few seconds."
+        : response.statusText || "Request failed";
+    throw new ApiError(detailMessage(data?.detail, fallback), response.status);
   }
   return data;
 }
@@ -845,4 +850,88 @@ function xhrUpload(file, onProgress) {
     body.append("file", file);
     xhr.send(body);
   });
+}
+
+function asQuestions(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+export async function listClassTests() {
+  const data = await run("/class-tests", () => request("/class-tests"));
+  return asQuestions(data?.tests);
+}
+
+export async function getClassTest(testId) {
+  const path = `/class-tests/${encodeURIComponent(testId)}`;
+  return run(path, () => request(path));
+}
+
+export async function startClassTest(testId) {
+  const path = `/class-tests/${encodeURIComponent(testId)}/start`;
+  return run(path, () => request(path, { method: "POST", json: {} }));
+}
+
+export async function saveClassAnswers(testId, answers) {
+  const path = `/class-tests/${encodeURIComponent(testId)}/answers`;
+  return run(path, () => request(path, { method: "PUT", json: { answers } }));
+}
+
+export async function runClassCode(testId, { questionId, code, language = "python" }) {
+  const path = `/class-tests/${encodeURIComponent(testId)}/run`;
+  const data = await run(path, () =>
+    request(path, { method: "POST", json: { question_id: questionId, code, language } }),
+  );
+  return {
+    question_id: asText(data?.question_id),
+    cases: Array.isArray(data?.cases) ? data.cases : [],
+  };
+}
+
+export async function submitClassTest(testId, answers) {
+  const path = `/class-tests/${encodeURIComponent(testId)}/submit`;
+  return run(path, () => request(path, { method: "POST", json: { answers } }));
+}
+
+export async function listTeacherClassTests() {
+  const data = await run("/teacher/class-tests", () => request("/teacher/class-tests"));
+  return asQuestions(data?.tests);
+}
+
+export async function getTeacherClassTest(testId) {
+  const path = `/teacher/class-tests/${encodeURIComponent(testId)}`;
+  return run(path, () => request(path));
+}
+
+export async function createClassTest(body) {
+  return run("/teacher/class-tests", () => request("/teacher/class-tests", { method: "POST", json: body }));
+}
+
+export async function updateClassTest(testId, body) {
+  const path = `/teacher/class-tests/${encodeURIComponent(testId)}`;
+  return run(path, () => request(path, { method: "PUT", json: body }));
+}
+
+export async function deleteClassTest(testId) {
+  const path = `/teacher/class-tests/${encodeURIComponent(testId)}`;
+  return run(path, () => request(path, { method: "DELETE" }));
+}
+
+export async function getClassAttempts(testId) {
+  const path = `/teacher/class-tests/${encodeURIComponent(testId)}/attempts`;
+  return run(path, () => request(path));
+}
+
+export async function listQuestionBank({ kind = "", topic = "" } = {}) {
+  const query = new URLSearchParams();
+  if (kind) query.set("kind", kind);
+  if (topic) query.set("topic", topic);
+  const suffix = query.toString() ? `?${query}` : "";
+  return run("/teacher/question-bank", () => request(`/teacher/question-bank${suffix}`));
+}
+
+export async function importMcqQuestions({ text, questions }) {
+  const data = await run("/teacher/question-bank/import", () =>
+    request("/teacher/question-bank/import", { method: "POST", json: { text: text || "", questions } }),
+  );
+  return asQuestions(data?.questions);
 }

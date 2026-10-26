@@ -11,6 +11,9 @@ services:
       dockerfile: Dockerfile
     image: codelens-api:prod
     env_file:
+      # backend-setup.sh writes GROQ_API_KEY and GROQ_API_KEYS here.
+      # env_file passes both into the container. Do not override them
+      # from the host shell: an empty value would hide the saved keys.
       - /opt/codelens/backend.env
     environment:
       CODELENS_KB: /data/chroma

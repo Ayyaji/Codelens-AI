@@ -449,3 +449,40 @@ A knowledge item:
 Upload accepts `.pdf`, `.docx`, `.txt`, `.md`, and `.markdown` up to 5 MB. Anything else is 415 `Upload a PDF, DOCX, TXT, or MD file.` Over the limit is 413 `That file is larger than 5 MB.` The record is `{id, filename, media_type, size, status, progress, error, created_at, kb_item_id, chunks}`. `status` is `processing`, `chunked`, or `failed`. This server chunks during the POST, so the response is already `chunked` or `failed` rather than left on `processing`. A file that cannot be read is still 200, with `status: "failed"` and `error` set. A chunk is `{index, title, content}`. Approving chunks writes one Chroma document and one `type: "document"`, `source: "upload"`, `origin: "upload"` item with `status: "approved"`, and sets `kb_item_id`. If that write fails, no library row is kept and the response is 502. Approving before `chunked`, or approving twice, is 409. Discarding an upload that already has `kb_item_id` is 409 `That upload is already in the library`.
 
 Title is required, at most 140 characters. Content is required, at most 20,000 characters. Topic is required, at most 60 characters. At most 8 tags, each at most 32 characters, stored lowercase. Unknown difficulty, source, or type is 422. A missing note is 404. A missing upload is 404 `Upload not found`. Students receive 403 `Teacher access required`. `GET /teacher/kb` with `page` past the last page returns the last page. `page_size` above 50 is 422.
+
+---
+
+## Class tests
+
+These routes are separate from `POST /test/generate`, `POST /run`, and `POST /test/submit`. The job-description practice flow is unchanged.
+
+A 503 whose `detail` is `AI service is busy, please try again in a few seconds` means every Groq key is rate-limited. The client shows that string. Unexpected 500s are JSON `{"detail": "Something went wrong. Please try again."}` and still include CORS headers.
+
+Teachers manage tests. Students take them. A teacher calling a student route is 403 `Student access required`.
+
+`test_type` is `mcq`, `coding`, or `mixed`. An MCQ paper contains only MCQs. A coding paper contains only coding questions. Mixed can also include short answers. `duration_minutes` is 1 to 240. `show_answers_after_submit` defaults to false. When it is true, the result includes the correct option, the expected short answer, and the explanation. Hidden coding cases stay off the student payload either way. Coding scores are the fraction of hidden cases passed (visible cases are used only when the question has no hidden cases, and by the Run button).
+
+Student questions during an attempt omit `correct_index`, `expected`, `keywords`, `hidden_cases`, and `explanation`.
+
+| Method | Path | Who | Body | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/class-tests` | student | | `{ tests: [summary + attempt] }` |
+| `GET` | `/class-tests/{id}` | student | | the attempt view. Questions only after start, or on a finished attempt |
+| `POST` | `/class-tests/{id}/start` | student | | records `started_at` and `deadline = started_at + duration`. Resumes an open attempt. 409 if already taken and retakes are off, or if the open attempt has expired |
+| `PUT` | `/class-tests/{id}/answers` | student | `{ answers }` | `{ saved, deadline, server_now }`. After the deadline: 409 `Time is up`, and the saved answers are graded |
+| `POST` | `/class-tests/{id}/run` | student | `{ question_id, code }` | visible cases only. A client stdin is ignored |
+| `POST` | `/class-tests/{id}/submit` | student | `{ answers? }` | the attempt view with `score` and `results`. After the deadline the body is ignored and the saved answers are graded |
+| `GET` | `/teacher/question-bank` | teacher | query `kind` (`mcq`, `coding`) and `topic` | `{ questions, totals: { coding, mcq } }` |
+| `POST` | `/teacher/question-bank/import` | teacher | `{ text }` or `{ questions }` | `{ questions }` normalized MCQs. Nothing is stored |
+| `GET` | `/teacher/class-tests` | teacher | | `{ tests }` summaries, including drafts |
+| `POST` | `/teacher/class-tests` | teacher | the test, including `questions` | the test, with answers |
+| `GET` | `/teacher/class-tests/{id}` | teacher | | the full test |
+| `PUT` | `/teacher/class-tests/{id}` | teacher | any fields | the test. Question edits are 409 once an attempt exists |
+| `DELETE` | `/teacher/class-tests/{id}` | teacher | | `{ id, deleted: true }`. 409 when attempts exist |
+| `GET` | `/teacher/class-tests/{id}/attempts` | teacher | | `{ test, count, submitted, average_score, attempts }` |
+
+`answers` items are `{ question_id, selected }` for MCQ, `{ question_id, text }` for short answer, and `{ question_id, code, language }` for coding. The countdown should use `deadline` minus the skew between `server_now` and the browser clock. One open attempt per student. `allow_retake` permits another attempt after the previous one is finished.
+
+The seeded bank is original: 15 DSA coding questions (arrays, strings, hashing, two pointers, stacks, binary search, linked list, trees, dynamic programming) and 25 MCQs (DSA, complexity, OOP, DBMS, OS, CN, aptitude).
+
+A finished attempt updates that student's persona (`weak_topics`, `mistake_patterns`, `scores`) and writes `class_test_submit` activity. It does not write a JD submission.

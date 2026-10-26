@@ -10,6 +10,12 @@ import { MySpacePage } from "./pages/MySpacePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResultsPage } from "./pages/ResultsPage";
 import { StudentDetailPage } from "./pages/StudentDetailPage";
+import { ClassResultPage } from "./pages/ClassResultPage";
+import { ClassTakePage } from "./pages/ClassTakePage";
+import { ClassTestsPage } from "./pages/ClassTestsPage";
+import { TeacherTestEditorPage } from "./pages/TeacherTestEditorPage";
+import { TeacherTestResultsPage } from "./pages/TeacherTestResultsPage";
+import { TeacherTestsPage } from "./pages/TeacherTestsPage";
 import { TestPage } from "./pages/TestPage";
 import { UploadPage } from "./pages/UploadPage";
 import { homeFor, useSession } from "./session";
@@ -107,6 +113,30 @@ export default function App() {
         }
       />
       <Route
+        path="/class-tests"
+        element={
+          <RequireAuth role="student">
+            <ClassTestsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/class-tests/:testId/results"
+        element={
+          <RequireAuth role="student">
+            <ClassResultPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/class-tests/:testId"
+        element={
+          <RequireAuth role="student">
+            <ClassTakePage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/results"
         element={
           <RequireAuth role="student">
@@ -143,6 +173,38 @@ export default function App() {
         element={
           <RequireAuth role="teacher">
             <KbPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/tests"
+        element={
+          <RequireAuth role="teacher">
+            <TeacherTestsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/tests/new"
+        element={
+          <RequireAuth role="teacher">
+            <TeacherTestEditorPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/tests/:testId/results"
+        element={
+          <RequireAuth role="teacher">
+            <TeacherTestResultsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard/tests/:testId"
+        element={
+          <RequireAuth role="teacher">
+            <TeacherTestEditorPage />
           </RequireAuth>
         }
       />

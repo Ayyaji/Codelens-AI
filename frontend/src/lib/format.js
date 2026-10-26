@@ -61,6 +61,8 @@ export function formatWhen(value) {
 const ACTIVITY_LABELS = {
   ask: "Guidance",
   test_submit: "Test",
+  class_test_submit: "Class test",
+  class_test_start: "Class test",
   account: "Account",
   jd_upload: "Upload",
   jd_analyse: "Analysis",
@@ -87,6 +89,12 @@ export function activityLine(item) {
     const directive = detail.directive ? String(detail.directive).toUpperCase() : "";
     return [score, directive].filter(Boolean).join(" · ") || "Submitted a test";
   }
+  if (type === "class_test_submit") {
+    const title = detail.title ? String(detail.title) : "class test";
+    const score = detail.score == null ? "" : `score ${detail.score}`;
+    return [title, score].filter(Boolean).join(" · ");
+  }
+  if (type === "class_test_start") return detail.title ? `Started ${detail.title}` : "Started a class test";
   if (type === "account") return detail.action ? `Account ${detail.action}` : "Account change";
   if (type === "jd_upload") return detail.filename ? `Uploaded ${detail.filename}` : "Uploaded a job description";
   if (type === "jd_analyse") return "Analysed a job description";

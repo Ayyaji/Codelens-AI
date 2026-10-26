@@ -7,6 +7,7 @@ const STUDENT_LINKS = [
   { to: "/upload", label: "Upload" },
   { to: "/analysis", label: "Analysis" },
   { to: "/test", label: "Test" },
+  { to: "/class-tests", label: "Class tests" },
   { to: "/results", label: "Results" },
   { to: "/chat", label: "Guidance" },
 ];
@@ -14,6 +15,7 @@ const STUDENT_LINKS = [
 const TEACHER_LINKS = [
   { to: "/dashboard", label: "Overview", end: true },
   { to: "/dashboard/activity", label: "Activity" },
+  { to: "/dashboard/tests", label: "Tests" },
   { to: "/dashboard/kb", label: "Knowledge" },
 ];
 
