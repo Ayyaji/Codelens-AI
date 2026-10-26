@@ -10,7 +10,7 @@ name: codelens-mongo
 
 services:
   mongo:
-    image: mongo:7
+    image: mongo:7.0
     command: ["--wiredTigerCacheSizeGB", "0.25"]
     env_file:
       - /opt/codelens/mongo.env

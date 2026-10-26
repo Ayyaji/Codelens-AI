@@ -18,6 +18,31 @@ warn_ubuntu_release() {
   echo "Warning: tested on Ubuntu 24.04 and 26.04. This machine is ${pretty:-unknown}. Continuing." >&2
 }
 
+# Return 0 when DATA_DIR was left by a failed first start and holds no
+# application data. A saved URI means the app user signed in, so the files
+# stay. MongoDB 8.0 files cannot be opened by 7.0, and a mongo:8 container
+# that never saved a URI never stored application data.
+should_clear_failed_mongo_datadir() {
+  local data_dir="$1"
+  local uri_file="$2"
+  local container_image="${3:-}"
+  [[ -f "$uri_file" ]] && return 1
+  [[ -d "$data_dir" ]] || return 1
+  if [[ "$container_image" == mongo:8 || "$container_image" == mongo:8.* ]]; then
+    return 0
+  fi
+  if [[ -f "$data_dir/storage.bson" ]] && grep -a -q '8\.0' "$data_dir/storage.bson"; then
+    return 0
+  fi
+  # mongod exited before creating WiredTiger tables.
+  if [[ ! -f "$data_dir/WiredTiger" && ! -f "$data_dir/WiredTiger.wt" ]]; then
+    if [[ -f "$data_dir/mongod.lock" || -d "$data_dir/journal" || -d "$data_dir/diagnostic.data" ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 trim() {
   local value="$1"
   value="${value//$'\r'/}"

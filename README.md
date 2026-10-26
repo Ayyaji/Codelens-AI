@@ -373,7 +373,7 @@ rag_core/kb_update.py      pending queue and the Chroma write
 rag_core/agents/           debug, concept, hint, web, JD, test, diagnosis, guide
 rag_core/sandbox/          subprocess runner
 knowledge_base/            notes used when a student is debugging
-docker-compose.yml         MongoDB 7 on port 27017
+docker-compose.yml         MongoDB 7.0 on port 27017
 deploy/simple/             Vercel + two EC2 instances (beginner deploy)
 tests/                     auth, judgment, scoring, sandbox, schemas
 ```

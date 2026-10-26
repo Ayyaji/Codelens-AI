@@ -265,7 +265,7 @@ cd /opt/codelens/app
 sudo bash deploy/mongo/setup.sh
 ```
 
-The script formats that disk as ext4 if it has no filesystem, mounts it at `/opt/codelens/mongo` by UUID, installs Docker, and starts MongoDB 7 with authentication. The cache is capped at 0.25 GB so a 1 GB instance has memory left for the operating system. The application user is created the first time the data directory is empty. Passwords come from SSM (`deploy/mongo/fetch-env.sh`, which `setup.sh` calls when the instance role works) or from `/opt/codelens/mongo.env` if you write it by hand:
+The script formats that disk as ext4 if it has no filesystem, mounts it at `/opt/codelens/mongo` by UUID, installs Docker, and starts MongoDB 7.0 (`mongo:7.0`) with authentication. MongoDB 8.x exits on kernels 6.19 through 7.0.13, which current Ubuntu AMIs ship. The cache is capped at 0.25 GB so a 1 GB instance has memory left for the operating system. The application user is created the first time the data directory is empty. Passwords come from SSM (`deploy/mongo/fetch-env.sh`, which `setup.sh` calls when the instance role works) or from `/opt/codelens/mongo.env` if you write it by hand:
 
 ```text
 MONGO_INITDB_ROOT_USERNAME='root'

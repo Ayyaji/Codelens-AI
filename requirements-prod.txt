@@ -17,6 +17,8 @@ langchain-community>=0.3.0
 langchain-text-splitters>=0.3.0
 ddgs>=9.0.0
 pypdf>=5.0.0
+# Motor 3.6+ and PyMongo 4.9+ both support MongoDB 7.0. The servers run
+# mongo:7.0. MongoDB 8.x exits on kernels 6.19 through 7.0.13.
 motor>=3.6.0
 pymongo>=4.9.0
 bcrypt>=4.2.0

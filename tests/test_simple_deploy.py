@@ -99,15 +99,48 @@ def test_env_file_round_trip_keeps_the_mongo_uri():
 
 def test_mongo_setup_binds_the_private_ip_and_prints_a_uri():
     text = (SIMPLE / "mongo-setup.sh").read_text(encoding="utf-8")
-    assert "mongo:8" in text
+    assert "IMAGE=mongo:7.0" in text
+    assert "IMAGE=mongo:8" not in text
     assert "/var/lib/codelens-mongo" in text
     assert "--restart unless-stopped" in text
     assert "${PRIVATE_IP}:27017:27017" in text
     assert "MONGO_INITDB_ROOT_USERNAME" in text
     assert "app_mongo_uri" in text
     assert "--wiredTigerCacheSizeGB 0.25" in text
+    assert "should_clear_failed_mongo_datadir" in text
     mode = os.stat(SIMPLE / "mongo-setup.sh").st_mode
     assert mode & stat.S_IXUSR
+    for compose in (
+        ROOT / "docker-compose.yml",
+        ROOT / "deploy" / "mongo" / "docker-compose.yml",
+    ):
+        assert "image: mongo:7.0" in compose.read_text(encoding="utf-8")
+        assert "image: mongo:8" not in compose.read_text(encoding="utf-8")
+
+
+def test_failed_mongo8_datadir_is_cleared_only_when_no_uri_was_saved(tmp_path):
+    data = tmp_path / "db"
+    data.mkdir()
+    (data / "storage.bson").write_bytes(b"\x16featureCompatibilityVersion\x00\x048.0\x00")
+    (data / "WiredTiger").write_text("metadata", encoding="utf-8")
+    uri = tmp_path / "uri"
+    out = _bash(
+        "source deploy/simple/lib.sh && "
+        f"should_clear_failed_mongo_datadir {json.dumps(str(data))} {json.dumps(str(uri))} mongo:8 "
+        "&& echo CLEAR || echo KEEP; "
+        f"printf '%s' 'mongodb://kept' > {json.dumps(str(uri))} && "
+        f"should_clear_failed_mongo_datadir {json.dumps(str(data))} {json.dumps(str(uri))} mongo:8 "
+        "&& echo CLEAR2 || echo KEEP2"
+    )
+    assert out.splitlines() == ["CLEAR", "KEEP2"]
+    guide = (ROOT / "docs" / "DEPLOY_SIMPLE.md").read_text(encoding="utf-8")
+    assert "SERVER-121912" in guide
+    assert "mongo:7.0" in guide
+    assert "sudo rm -rf /var/lib/codelens-mongo" in guide
+    req = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    prod = (ROOT / "requirements-prod.txt").read_text(encoding="utf-8")
+    assert "motor>=3.6.0" in req and "pymongo>=4.9.0" in req
+    assert "motor>=3.6.0" in prod and "pymongo>=4.9.0" in prod
 
 
 def test_backend_setup_uses_caddy_swap_and_vercel_cors():

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # One command for the MongoDB instance (Ubuntu 24.04, 26.04, or newer).
-# Runs MongoDB 8 in Docker, turns on auth, publishes 27017 on the private IP
+# Runs MongoDB 7.0 in Docker, turns on auth, publishes 27017 on the private IP
 # only, and prints a MONGODB_URI the backend can use.
+# mongo:8 exits on kernels 6.19 through 7.0.13 (SERVER-121912, SERVER-125742).
+# Those kernels ship on current Ubuntu 24.04 and 26.04 AMIs. 7.0 does not.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -17,7 +19,7 @@ URI_FILE=/root/codelens-mongodb.uri
 SECRET_FILE=/root/codelens-mongodb.admin
 DATA_DIR=/var/lib/codelens-mongo
 CONTAINER=codelens-mongo
-IMAGE=mongo:8
+IMAGE=mongo:7.0
 DB_NAME=codelens
 APP_USER=codelens
 
@@ -33,6 +35,24 @@ published_on_private_ip() {
 
 data_initialized() {
   [[ -d "$DATA_DIR/journal" || -f "$DATA_DIR/WiredTiger" || -f "$DATA_DIR/mongod.lock" ]]
+}
+
+running_image() {
+  docker inspect -f '{{.Config.Image}}' "$CONTAINER" 2>/dev/null || true
+}
+
+# Drop files left by a mongo:8 process that exited before this script saved a
+# URI. A directory with a URI, or a 7.0 directory whose secret file was lost,
+# is left alone.
+clear_failed_datadir() {
+  local image=""
+  image="$(running_image)"
+  if ! should_clear_failed_mongo_datadir "$DATA_DIR" "$URI_FILE" "$image"; then
+    return 0
+  fi
+  echo "Removing $DATA_DIR from a failed MongoDB start. No URI was saved, so there is no application data to keep."
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  find "$DATA_DIR" -mindepth 1 -delete
 }
 
 print_uri() {
@@ -122,14 +142,27 @@ PRIVATE_IP="$(private_ip)"
 # second run is safe; chown fixes a partial run that left it owned by root.
 install -d -o 999 -g 999 -m 0755 "$DATA_DIR"
 
+clear_failed_datadir
+
 if [[ -f "$URI_FILE" ]] && container_running && published_on_private_ip; then
-  URI="$(tr -d '[:space:]' <"$URI_FILE")"
-  echo "MongoDB is already set up. Copy this URI into the backend setup:"
-  echo
-  echo "$URI"
-  echo
-  echo "The root password is in $SECRET_FILE."
-  exit 0
+  current_image="$(running_image)"
+  if [[ "$current_image" == "$IMAGE" || "$current_image" == "${IMAGE}".* ]]; then
+    URI="$(tr -d '[:space:]' <"$URI_FILE")"
+    echo "MongoDB is already set up. Copy this URI into the backend setup:"
+    echo
+    echo "$URI"
+    echo
+    echo "The root password is in $SECRET_FILE."
+    exit 0
+  fi
+fi
+
+if [[ -f "$URI_FILE" && -f "$DATA_DIR/storage.bson" ]] && grep -a -q '8\.0' "$DATA_DIR/storage.bson"; then
+  echo "The data in $DATA_DIR was written by MongoDB 8. MongoDB 7.0 cannot open it." >&2
+  echo "If you do not need that data, wipe it and run this script again:" >&2
+  echo "  sudo docker rm -f $CONTAINER" >&2
+  echo "  sudo rm -rf $DATA_DIR $URI_FILE" >&2
+  exit 1
 fi
 
 if [[ -f "$SECRET_FILE" ]] && load_passwords; then

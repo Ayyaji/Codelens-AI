@@ -134,13 +134,23 @@ sudo bash deploy/simple/mongo-setup.sh
 
 If `git checkout` says the branch does not exist, check out the branch your team merged this guide into. If `deploy/simple/mongo-setup.sh` is missing, you are on the wrong branch.
 
-The script installs Docker, runs the official MongoDB 8 image, turns on authentication, and publishes port 27017 on the instance’s **private** IP only. Data stays in `/var/lib/codelens-mongo`. It prints a line like:
+The script installs Docker and runs the official **`mongo:7.0`** image. MongoDB 8.x refuses to start on Linux kernels 6.19 through 7.0.13 ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912), [SERVER-125742](https://jira.mongodb.org/browse/SERVER-125742)). Ubuntu 24.04 and 26.04 AMIs ship those kernels. MongoDB 7.0 is supported on them. The Python client is already in range: Motor 3.6+ and PyMongo 4.9+ both speak to 7.0.
+
+The container turns on authentication and publishes port 27017 on the instance’s **private** IP only. Data stays in `/var/lib/codelens-mongo`. It prints a line like:
 
 ```text
 mongodb://codelens:PASSWORD@172.31.10.20:27017/codelens?authSource=admin
 ```
 
 Copy that whole line. It is `MONGODB_URI`. A copy is also in `/root/codelens-mongodb.uri` on that instance (`sudo cat /root/codelens-mongodb.uri`). The root password is in `/root/codelens-mongodb.admin`, which only root can read. Running the script again prints the same URI and does not rotate the password.
+
+A failed MongoDB 8 start can leave WiredTiger files in `/var/lib/codelens-mongo` before any application data exists. If `/root/codelens-mongodb.uri` was never written, the script deletes that directory and starts 7.0. If the script stops because a MongoDB 8 directory is still there, wipe it and run the command again:
+
+```bash
+sudo docker rm -f codelens-mongo
+sudo rm -rf /var/lib/codelens-mongo
+sudo bash deploy/simple/mongo-setup.sh
+```
 
 Leave this SSH session open so you can copy the URI. Open a **second** PowerShell window for the next step.
 
@@ -247,7 +257,7 @@ A local `npm run dev` can also call this API. The Vite origins (`http://localhos
 | What you see | What to do |
 | --- | --- |
 | SSH times out | The SSH rule is not your current IP. Set the source to **My IP** again. You are using `ubuntu`, the `.pem` key, and (for the API) the Elastic IP. |
-| `mongo-setup.sh` cannot start MongoDB | `sudo docker logs codelens-mongo --tail 50` on the database instance. Ubuntu 24.04, 26.04, and newer releases are accepted. |
+| `mongo-setup.sh` cannot start MongoDB | `sudo docker logs codelens-mongo --tail 50`. The image is `mongo:7.0` because MongoDB 8 exits on kernel 6.19+. If a failed 8.0 data directory is still in the way: `sudo docker rm -f codelens-mongo && sudo rm -rf /var/lib/codelens-mongo` and run the script again. |
 | API logs show exit 137 | The model ran out of memory. The script adds swap; re-run it. Do not start a second API container. |
 | `https://…sslip.io/health` fails, local health works | The Elastic IP must be associated **before** you run the API script. Ports 80 and 443 must be open to anywhere. Re-run `sudo bash deploy/simple/backend-setup.sh` so the sslip.io name matches the current IP. |
 | The Vercel site loads but login fails | `VITE_API_URL` must be the `https` API address with no trailing slash, and you must redeploy after changing it. |
