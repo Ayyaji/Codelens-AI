@@ -2,7 +2,7 @@
 
 The React client calls the FastAPI app. Paths below match `rag_core/schemas.py` and `rag_core/api.py`.
 
-Base URL: `VITE_API_URL` (no trailing slash). When the variable is missing the client uses `http://localhost:8000`. The three-server deploy sets it to the relative path `/api`: Nginx on the frontend forwards `/api/...` to FastAPI, so the browser stays on one origin. An S3 build sets it to the absolute HTTPS origin of the API instead, and `CORS_ORIGINS` on the API must list that site. With `CORS_ORIGINS` unset, any origin is allowed. The Vite dev origins stay allowed when `CORS_ORIGINS` is set, so a local client can call a deployed API. Send the access token as a header, not a cookie:
+Base URL: `VITE_API_URL` (no trailing slash). When the variable is missing the client uses `http://localhost:8000`. The three-server deploy sets it to the relative path `/api`: Nginx on the frontend forwards `/api/...` to FastAPI, so the browser stays on one origin. An S3 build sets it to the absolute HTTPS origin of the API instead, and `CORS_ORIGINS` on the API must list that site. The simple deploy (Vercel plus two EC2 instances) sets `VITE_API_URL` to the API's HTTPS address. `CORS_ORIGIN_REGEX` then allows every `https://*.vercel.app` site, and `CORS_ORIGINS` lists any extra site such as a custom domain. With both unset, any origin is allowed. The Vite dev origins stay allowed when `CORS_ORIGINS` is set, so a local client can call a deployed API. Send the access token as a header, not a cookie:
 
 ```http
 Authorization: Bearer <token>

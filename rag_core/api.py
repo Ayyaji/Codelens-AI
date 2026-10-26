@@ -31,7 +31,7 @@ from rag_core.auth import (
     verify_password,
     warn_default_secret,
 )
-from rag_core.config import cors_origins
+from rag_core.config import cors_origin_regex, cors_origins
 from rag_core.judgment import extract_error_type
 from rag_core.kb_update import approve_pending, edit_pending, pending_items, reject_pending
 from rag_core.llm import init_clients
@@ -121,12 +121,14 @@ app = FastAPI(
 
 # Bearer tokens are headers, not cookies, so credentials stay off.
 # The three-server deploy is same-origin: Nginx on the frontend proxies /api
-# and the browser never calls port 8000. CORS_ORIGINS matters for the S3
-# alternative, where the site and the API have different hosts. Empty keeps
-# the local default of any origin.
+# and the browser never calls port 8000. The simple deploy is not: the site
+# is on Vercel and the API is on another host. CORS_ORIGIN_REGEX allows
+# https://*.vercel.app, and CORS_ORIGINS lists any extra site (CloudFront,
+# or a custom domain). With both unset, local development allows any origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
+    allow_origin_regex=cors_origin_regex(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

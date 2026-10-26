@@ -1,0 +1,55 @@
+# API and Caddy for the single backend instance in the default VPC.
+# Port 8000 is bound to loopback only. The security group opens 80 and 443.
+# Run this with deploy/simple/backend-setup.sh, which fills PUBLIC_HOST.
+
+name: codelens
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: codelens-api:prod
+    env_file:
+      - /opt/codelens/backend.env
+    environment:
+      CODELENS_KB: /data/chroma
+      CODELENS_LOW_MEMORY: "1"
+      HF_HOME: /cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /cache/huggingface
+      TRANSFORMERS_CACHE: /cache/huggingface
+    volumes:
+      - /opt/codelens/data/chroma:/data/chroma
+      - /opt/codelens/cache/huggingface:/cache/huggingface
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/codelens/caddy/data:/data
+      - /opt/codelens/caddy/config:/config

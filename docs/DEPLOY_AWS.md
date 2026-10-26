@@ -1,6 +1,8 @@
-# Deploy CodeLens AI on AWS
+# Deploy CodeLens AI on AWS (advanced, three servers)
 
-This is the production layout for the VTU project. Three EC2 instances share one VPC in **Asia Pacific (Mumbai), `ap-south-1`**. The browser talks only to the frontend. The API and the database accept traffic only from the security group in front of them.
+Beginners should follow [DEPLOY_SIMPLE.md](DEPLOY_SIMPLE.md) instead. That path hosts the React app on Vercel and runs the API and MongoDB as two EC2 instances in the default VPC.
+
+This chapter is the advanced layout. Three EC2 instances share one custom VPC in **Asia Pacific (Mumbai), `ap-south-1`**. The browser talks only to the frontend. The API and the database accept traffic only from the security group in front of them.
 
 You need an AWS account, a Groq API key, and a domain name if you want HTTPS from Let's Encrypt. A domain is a few dollars a year from any registrar, or a subdomain your college already owns. The site also runs over plain HTTP on the frontend's public address for a local demo.
 

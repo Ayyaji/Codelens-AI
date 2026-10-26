@@ -63,25 +63,44 @@ VITE_DEV_ORIGINS = [
 ]
 
 
+def cors_origin_regex() -> str | None:
+    """Optional pattern matched against the whole browser ``Origin`` header.
+
+    The simple deploy sets this so every ``https://*.vercel.app`` site can
+    call the API. Empty means there is no pattern. The process reads it once,
+    at startup.
+    """
+    load_env()
+    raw = os.getenv("CORS_ORIGIN_REGEX", "").strip()
+    return raw or None
+
+
 def cors_origins() -> list[str]:
     """Browser origins allowed to call the API.
 
     ``CORS_ORIGINS`` is a comma-separated list, set at process start. The
     three-server deploy does not need it (the browser talks only to Nginx).
-    Set it to the CloudFront origin when the static site is hosted on S3.
-    When it is empty the API keeps the local default and allows any origin.
-    A trailing slash is ignored.
+    Set it to the CloudFront origin when the static site is hosted on S3,
+    or to a custom frontend origin on the simple deploy. ``CORS_ORIGIN_REGEX``
+    covers ``https://*.vercel.app`` on that deploy. When both are empty the
+    API keeps the local default and allows any origin. A trailing slash is
+    ignored. A regex does not open every origin: an empty list then allows
+    only the Vite dev servers plus whatever the regex matches.
     """
     load_env()
     raw = os.getenv("CORS_ORIGINS", "").strip()
-    if not raw or raw == "*":
+    locked = bool(os.getenv("CORS_ORIGIN_REGEX", "").strip())
+    if (not raw or raw == "*") and not locked:
         return ["*"]
     origins: list[str] = []
     seen: set[str] = set()
-    for item in [*raw.split(","), *VITE_DEV_ORIGINS]:
+    listed = [] if not raw or raw == "*" else raw.split(",")
+    for item in [*listed, *VITE_DEV_ORIGINS]:
         origin = item.strip().rstrip("/")
         if not origin or origin == "*" or origin in seen:
             continue
         seen.add(origin)
         origins.append(origin)
-    return origins or ["*"]
+    if not origins and not locked:
+        return ["*"]
+    return origins

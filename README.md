@@ -374,12 +374,15 @@ rag_core/agents/           debug, concept, hint, web, JD, test, diagnosis, guide
 rag_core/sandbox/          subprocess runner
 knowledge_base/            notes used when a student is debugging
 docker-compose.yml         MongoDB 7 on port 27017
+deploy/simple/             Vercel + two EC2 instances (beginner deploy)
 tests/                     auth, judgment, scoring, sandbox, schemas
 ```
 
 ## AWS
 
-Production is three EC2 instances in one Mumbai VPC: Nginx and the Vite build on a public t3.micro, FastAPI and Chroma on a t3.small, and MongoDB on a private t3.micro. S3, CloudFront, and Atlas are lower-cost alternatives. The steps, the security-group table, the cost estimate, and the teardown are in [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).
+The beginner path puts the React app on Vercel and runs the API and MongoDB as two EC2 instances in the default Mumbai VPC. The console clicks and the two setup commands are in [docs/DEPLOY_SIMPLE.md](docs/DEPLOY_SIMPLE.md).
+
+A three-server layout in a custom VPC (Nginx, the API, and a private database) is the advanced option. That guide, the security-group table, and the teardown are in [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).
 
 ## Team
 
