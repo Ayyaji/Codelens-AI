@@ -1,11 +1,20 @@
+import { extractFileText } from "../lib/kbExtract";
 import {
   mockActivity,
   mockAnalysis,
   mockApproveKb,
+  mockApproveKbUpload,
   mockAsk,
+  mockBulkKb,
+  mockCreateKb,
+  mockCreateKbUpload,
+  mockDeleteKb,
+  mockDiscardKbUpload,
   mockEditKb,
   mockGenerate,
+  mockGetKb,
   mockHistory,
+  mockListKbUploads,
   mockLogin,
   mockMe,
   mockMyChat,
@@ -17,6 +26,7 @@ import {
   mockRejectKb,
   mockResetStudent,
   mockRun,
+  mockSearchKb,
   mockSetDisabled,
   mockStudent,
   mockStudentChat,
@@ -399,18 +409,84 @@ function normalizeStudentDetail(data) {
   };
 }
 
+function asList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => asText(item).trim()).filter(Boolean);
+}
+
 function normalizeKb(entry) {
   return {
     id: asText(entry?.id),
+    title: asText(entry?.title || entry?.query || "Untitled"),
     content: asText(entry?.content),
-    source: entry?.source == null ? null : asText(entry.source),
-    proposed_by: entry?.proposed_by == null ? null : asText(entry.proposed_by),
+    topic: asText(entry?.topic),
+    tags: asList(entry?.tags),
+    difficulty: entry?.difficulty ? asText(entry.difficulty) : "",
+    source: entry?.source == null ? "" : asText(entry.source),
+    type: asText(entry?.type || "concept"),
+    origin: asText(entry?.origin || ""),
+    proposed_by: entry?.proposed_by == null ? "" : asText(entry.proposed_by),
+    proposer_name: entry?.proposer_name == null ? "" : asText(entry.proposer_name),
+    proposer_role: entry?.proposer_role == null ? "" : asText(entry.proposer_role),
     status: asText(entry?.status) || "pending",
-    query: entry?.query == null ? null : asText(entry.query),
-    reviewed_by: entry?.reviewed_by == null ? null : asText(entry.reviewed_by),
-    reviewed_at: entry?.reviewed_at == null ? null : asText(entry.reviewed_at),
-    created_at: entry?.created_at == null ? null : asText(entry.created_at),
+    query: entry?.query == null ? "" : asText(entry.query),
+    reviewed_by: entry?.reviewed_by == null ? "" : asText(entry.reviewed_by),
+    reviewed_at: entry?.reviewed_at == null ? "" : asText(entry.reviewed_at),
+    reject_reason: entry?.reject_reason == null ? "" : asText(entry.reject_reason),
+    created_at: entry?.created_at == null ? "" : asText(entry.created_at),
+    updated_at: entry?.updated_at == null ? "" : asText(entry.updated_at),
   };
+}
+
+function normalizeKbPage(data) {
+  const facets = data?.facets && typeof data.facets === "object" ? data.facets : {};
+  const counts = data?.counts && typeof data.counts === "object" ? data.counts : {};
+  return {
+    items: (Array.isArray(data?.items) ? data.items : []).map(normalizeKb),
+    total: Number(data?.total) || 0,
+    page: Number(data?.page) || 1,
+    page_size: Number(data?.page_size) || 8,
+    counts: {
+      pending: Number(counts.pending) || 0,
+      approved: Number(counts.approved) || 0,
+      rejected: Number(counts.rejected) || 0,
+    },
+    facets: {
+      topics: asList(facets.topics),
+      tags: asList(facets.tags),
+      types: asList(facets.types),
+      sources: asList(facets.sources),
+    },
+  };
+}
+
+function normalizeUpload(entry) {
+  return {
+    id: asText(entry?.id),
+    filename: asText(entry?.filename),
+    media_type: asText(entry?.media_type),
+    size: Number(entry?.size) || 0,
+    status: asText(entry?.status) || "processing",
+    progress: Number(entry?.progress) || 0,
+    error: entry?.error ? asText(entry.error) : "",
+    created_at: entry?.created_at ? asText(entry.created_at) : "",
+    kb_item_id: entry?.kb_item_id ? asText(entry.kb_item_id) : "",
+    chunks: (Array.isArray(entry?.chunks) ? entry.chunks : []).map((chunk, index) => ({
+      index: Number.isFinite(Number(chunk?.index)) ? Number(chunk.index) : index,
+      title: asText(chunk?.title) || `Chunk ${index + 1}`,
+      content: asText(chunk?.content),
+    })),
+  };
+}
+
+function kbQuery(params) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value == null || value === "") continue;
+    query.set(key, String(value));
+  }
+  const text = query.toString();
+  return text ? `/teacher/kb?${text}` : "/teacher/kb";
 }
 
 async function request(path, { method = "GET", json, body } = {}) {
@@ -625,14 +701,41 @@ export async function listPendingKb() {
   return (Array.isArray(data) ? data : []).map(normalizeKb);
 }
 
-export async function updateKb(itemId, content) {
+export async function searchKb(params) {
+  const path = kbQuery(params);
+  const data = await run(path, () => (mockEnabled("kb") ? mockSearchKb(getToken(), params) : request(path)));
+  return normalizeKbPage(data);
+}
+
+export async function getKb(itemId) {
   const path = `/teacher/kb/${encodeURIComponent(itemId)}`;
+  const data = await run(path, () => (mockEnabled("kb") ? mockGetKb(getToken(), itemId) : request(path)));
+  return normalizeKb(data);
+}
+
+export async function createKb(fields) {
+  const path = "/teacher/kb";
   const data = await run(path, () =>
-    mockEnabled("kb")
-      ? mockEditKb(getToken(), itemId, content)
-      : request(path, { method: "PUT", json: { content } }),
+    mockEnabled("kb") ? mockCreateKb(getToken(), fields) : request(path, { method: "POST", json: fields }),
   );
   return normalizeKb(data);
+}
+
+export async function updateKb(itemId, patch) {
+  const path = `/teacher/kb/${encodeURIComponent(itemId)}`;
+  const json = typeof patch === "string" ? { content: patch } : patch;
+  const data = await run(path, () =>
+    mockEnabled("kb") ? mockEditKb(getToken(), itemId, json) : request(path, { method: "PUT", json }),
+  );
+  return normalizeKb(data);
+}
+
+export async function deleteKb(itemId) {
+  const path = `/teacher/kb/${encodeURIComponent(itemId)}`;
+  const data = await run(path, () =>
+    mockEnabled("kb") ? mockDeleteKb(getToken(), itemId) : request(path, { method: "DELETE" }),
+  );
+  return { id: asText(data?.id || itemId), deleted: data?.deleted !== false };
 }
 
 export async function approveKb(itemId) {
@@ -643,10 +746,103 @@ export async function approveKb(itemId) {
   return normalizeKb(data);
 }
 
-export async function rejectKb(itemId) {
+export async function rejectKb(itemId, reason) {
   const path = `/teacher/kb/${encodeURIComponent(itemId)}/reject`;
+  const json = reason == null ? {} : { reason };
   const data = await run(path, () =>
-    mockEnabled("kb") ? mockRejectKb(getToken(), itemId) : request(path, { method: "POST" }),
+    mockEnabled("kb") ? mockRejectKb(getToken(), itemId, reason) : request(path, { method: "POST", json }),
   );
   return normalizeKb(data);
+}
+
+export async function bulkReviewKb({ ids, action, reason }) {
+  const path = "/teacher/kb/bulk";
+  const json = { ids, action, reason };
+  const data = await run(path, () =>
+    mockEnabled("kb") ? mockBulkKb(getToken(), json) : request(path, { method: "POST", json }),
+  );
+  return {
+    updated: (Array.isArray(data?.updated) ? data.updated : []).map(normalizeKb),
+    failed: Array.isArray(data?.failed) ? data.failed : [],
+  };
+}
+
+export async function listKbUploads() {
+  const path = "/teacher/kb/uploads";
+  const data = await run(path, () => (mockEnabled("kb") ? mockListKbUploads(getToken()) : request(path)));
+  return (Array.isArray(data) ? data : []).map(normalizeUpload);
+}
+
+export async function uploadKbFile(file, onProgress) {
+  if (mockEnabled("kb")) {
+    onProgress?.(25);
+    let text = "";
+    let extractError = "";
+    try {
+      text = await extractFileText(file);
+    } catch (error) {
+      extractError = error?.message || "Could not read that file.";
+    }
+    onProgress?.(60);
+    const created = await run("/teacher/kb/uploads", () =>
+      mockCreateKbUpload(getToken(), {
+        filename: file.name,
+        size: file.size,
+        media_type: file.type || "",
+        text,
+        extract_error: extractError,
+      }),
+    );
+    onProgress?.(created?.status === "processing" ? 75 : 100);
+    return normalizeUpload(created);
+  }
+  return run("/teacher/kb/uploads", () => xhrUpload(file, onProgress));
+}
+
+export async function approveKbUpload(uploadId, body) {
+  const path = `/teacher/kb/uploads/${encodeURIComponent(uploadId)}/approve`;
+  const data = await run(path, () =>
+    mockEnabled("kb") ? mockApproveKbUpload(getToken(), uploadId, body) : request(path, { method: "POST", json: body }),
+  );
+  return { upload: normalizeUpload(data?.upload), item: normalizeKb(data?.item) };
+}
+
+export async function discardKbUpload(uploadId) {
+  const path = `/teacher/kb/uploads/${encodeURIComponent(uploadId)}`;
+  const data = await run(path, () =>
+    mockEnabled("kb") ? mockDiscardKbUpload(getToken(), uploadId) : request(path, { method: "DELETE" }),
+  );
+  return { id: asText(data?.id || uploadId), deleted: data?.deleted !== false };
+}
+
+function xhrUpload(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${apiBase()}/teacher/kb/uploads`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 90));
+    };
+    xhr.onload = () => {
+      let data = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        data = { detail: xhr.responseText };
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiError(detailMessage(data?.detail, xhr.statusText || "Upload failed"), xhr.status));
+        return;
+      }
+      onProgress?.(100);
+      resolve(normalizeUpload(data));
+    };
+    xhr.onerror = () => {
+      reject(new ApiError("Could not reach the CodeLens API. Check VITE_API_URL and that the server is running."));
+    };
+    const body = new FormData();
+    body.append("file", file);
+    xhr.send(body);
+  });
 }

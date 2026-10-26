@@ -77,7 +77,7 @@ Mock mutations (a new chat, an approved note, a reset profile) stay in `sessionS
 | `/dashboard` | teacher | Overview cards, directive and score charts, student search. |
 | `/dashboard/students/:studentId` | teacher | Persona, activity, tests, chats. Disable, enable, reset. |
 | `/dashboard/activity` | teacher | Activity feed, polled every few seconds. |
-| `/dashboard/kb` | teacher | Pending notes. View, edit, approve, reject. |
+| `/dashboard/kb` | teacher | Library: search, filters, tabs, markdown notes, bulk review, and document upload. |
 
 Students who open a teacher URL are sent to My Space. Teachers who open a student URL are sent to the dashboard.
 

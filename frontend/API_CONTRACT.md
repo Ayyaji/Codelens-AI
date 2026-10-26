@@ -38,6 +38,7 @@ Checked against PR #3. This client follows the shapes in that branch. These are 
 10. Overview `avg_score` is `0` when nobody has submitted. A student's `avg_score` is `null` in that case. `active_today` counts distinct students with any activity since UTC midnight.
 11. Reset returns `{id, reset: true}`. It deletes chats, the persona, submissions, activity, job descriptions, and generated tests. The account and the disabled flag stay. Knowledge-base items they proposed stay in the queue. The mock has no generated-test collection separate from submissions.
 12. Real chat, user, submission, and knowledge-base ids are Mongo ObjectId strings. Job description ids are uuid hex. The client treats every id as an opaque string. The mock uses readable ids such as `stu_ada` and `chat_ada_none`.
+13. The library page calls the proposed `/teacher/kb` collection, upload, and bulk routes documented at the end of the teacher section. PR #3 only has `GET /teacher/kb/pending`, `PUT` of `{content}` while pending, and approve/reject with no reason. Those four still exist in the mock. The new page does not use the content-only edit.
 
 ---
 
@@ -360,10 +361,10 @@ All of these are 403 `Teacher access required` for a student. Mock names: `overv
 | `PATCH` | `/teacher/students/{id}` | `{disabled: true}` | the student list item |
 | `POST` | `/teacher/students/{id}/reset` | | `{id, reset: true}` |
 | `GET` | `/teacher/activity?limit=` | | newest student events, `limit` 1–200, default 50 |
-| `GET` | `/teacher/kb/pending` | | pending notes, oldest first |
-| `PUT` | `/teacher/kb/{id}` | `{content}` | the edited note |
-| `POST` | `/teacher/kb/{id}/approve` | | the note, `status: "approved"`. This is the only call that writes the note to Chroma |
-| `POST` | `/teacher/kb/{id}/reject` | | the note, `status: "rejected"` |
+| `GET` | `/teacher/kb/pending` | | pending notes, oldest first. Still implemented. The library page uses `GET /teacher/kb` below. |
+| `PUT` | `/teacher/kb/{id}` | `{content}` on PR #3 | the edited note. This client sends the fuller body in the proposal section. |
+| `POST` | `/teacher/kb/{id}/approve` | | the note, `status: "approved"`. On PR #3 this is the only call that writes the note to Chroma |
+| `POST` | `/teacher/kb/{id}/reject` | `{reason}` optional on the proposal | the note, `status: "rejected"` |
 
 `directive_counts` is `{full, hint, gentle, break}`.
 
@@ -371,6 +372,74 @@ All of these are 403 `Teacher access required` for a student. Mock names: `overv
 
 An activity item is `{id, user_id, type, detail, ts}`. The feed also sends `name` and `email`. `detail` is an object. Guidance rows carry `query`, `agent_used`, `response_time`, `error_type`, `topic`, and `directive`. A test submission adds `score`, `jd_id`, and `test_id`. An account row is `{action, by}` where `action` is `disabled`, `enabled`, or `reset`.
 
-A pending note is `{id, content, source, proposed_by, status, query, reviewed_by, reviewed_at, created_at}`. `status` is `pending`, `approved`, or `rejected`. Approving or rejecting a note that is not pending is 409. Editing a note that is not pending is 409 `Only a pending item can be edited`. Blank content is 422. Editing and rejecting do not write to Chroma.
+A note on PR #3 is `{id, content, source, proposed_by, status, query, reviewed_by, reviewed_at, created_at}`. `status` is `pending`, `approved`, or `rejected`. Approving or rejecting a note that is not pending is 409. On PR #3, editing a note that is not pending is 409 `Only a pending item can be edited`, and the body is `{content}` only. Blank content is 422. Editing and rejecting do not write to Chroma. The library UI does not call that narrow edit. It calls the proposal below, including while a note is already approved.
 
-The dashboard charts plot `directive_counts` and each student's `avg_score`. Those charts are not extra API fields. The students search box filters the array already returned.
+The dashboard charts plot `directive_counts` and each student's `avg_score`. Those charts are not extra API fields. The students search box filters the array already returned. `pending_kb` on the overview is still the count of notes with `status: "pending"`.
+
+## Proposed knowledge-base routes
+
+Not on PR #3. The teacher library calls these paths on `VITE_API_URL`. With `VITE_USE_MOCKS=true` (or the `kb` mock name) the fixtures implement them. Against the current auth backend they will 404 until Raghava adds them.
+
+A knowledge item:
+
+```json
+{
+  "id": "kb_arrays",
+  "title": "Arrays: index arithmetic",
+  "content": "Markdown body",
+  "topic": "Arrays",
+  "tags": ["arrays", "dsa"],
+  "difficulty": "easy",
+  "source": "textbook",
+  "type": "concept",
+  "origin": "teacher",
+  "status": "approved",
+  "proposed_by": "tch_rao",
+  "proposer_name": "Meera Rao",
+  "proposer_role": "teacher",
+  "query": "Arrays: index arithmetic",
+  "reviewed_by": "tch_rao",
+  "reviewed_at": "2026-10-21T05:00:00Z",
+  "reject_reason": null,
+  "created_at": "2026-10-21T05:00:00Z",
+  "updated_at": "2026-10-21T05:00:00Z"
+}
+```
+
+`difficulty` is `easy`, `medium`, `hard`, or null. `source` is `teacher`, `student`, `ai`, `web`, `upload`, or `textbook`. `type` is `concept`, `qa`, `college`, or `document`. `origin` is who created the row: `teacher`, `student`, `ai`, or `upload`. `status` is `pending`, `approved`, or `rejected`.
+
+`POST /teacher/kb` is teacher-only. The server sets `origin` from the caller. `approve` defaults to true for a teacher, which stores the item as `approved`. `approve: false` leaves it `pending`. An item whose origin is `student` or `ai` stays `pending` even if `approve` is sent. There is no student write route in this client yet.
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| `GET` | `/teacher/kb` | | a page, below |
+| `POST` | `/teacher/kb` | `{title, content, topic, tags, difficulty, source, type, approve?}` | the item |
+| `GET` | `/teacher/kb/{id}` | | the item |
+| `PUT` | `/teacher/kb/{id}` | any of `title`, `content`, `topic`, `tags`, `difficulty`, `source`, `type` | the item. Pending and approved rows can be edited. Status does not change. |
+| `DELETE` | `/teacher/kb/{id}` | | `{id, deleted: true}` |
+| `POST` | `/teacher/kb/bulk` | `{ids, action, reason?}` | `{updated: [items], failed: [{id, detail}]}` |
+| `POST` | `/teacher/kb/uploads` | multipart field `file` | an upload record |
+| `GET` | `/teacher/kb/uploads` | | upload records, newest first |
+| `POST` | `/teacher/kb/uploads/{id}/approve` | `{chunk_indexes?, title?, topic?, tags?, difficulty?}` | `{upload, item}` |
+| `DELETE` | `/teacher/kb/uploads/{id}` | | `{id, deleted: true}` |
+
+`GET /teacher/kb` query params, all optional: `q`, `status`, `topic`, `tag`, `type`, `source`, `from`, `to`, `page` (default 1), `page_size` (default 8, max 50). `from` and `to` are `YYYY-MM-DD` on `created_at`, inclusive. `q` matches title, content, topic, tags, and query. Pending rows are oldest first. Other statuses are newest `updated_at` first.
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 8,
+  "counts": { "pending": 0, "approved": 0, "rejected": 0 },
+  "facets": { "topics": [], "tags": [], "types": [], "sources": [] }
+}
+```
+
+`counts` respect every filter except `status`, so the Pending / Approved / Rejected tabs can show how many notes the other filters would leave in each tab. `facets` are taken from the whole library.
+
+`POST /teacher/kb/bulk` `action` is `approve` or `reject`. Reject requires a non-empty `reason`. Ids that are missing or not pending go in `failed` and do not fail the whole call. Single `POST /teacher/kb/{id}/reject` accepts `{reason}`. A blank reason is 422. Omitting the body still rejects, matching PR #3.
+
+Upload accepts `.pdf`, `.docx`, `.txt`, `.md` up to 5 MB. Anything else is 415. Over the limit is 413. The record is `{id, filename, media_type, size, status, progress, error, created_at, kb_item_id, chunks}`. `status` is `processing`, `chunked`, or `failed`. A chunk is `{index, title, content}`. Approving chunks creates one `type: "document"`, `source: "upload"` item with `status: "approved"` and sets `kb_item_id`. Approving before `chunked` is 409. Discarding an upload that already has `kb_item_id` is 409.
+
+Title is required, at most 140 characters. Content is required. Topic is required, at most 60 characters. At most 8 tags, each at most 32 characters. Unknown difficulty, source, or type is 422. Missing items are 404. Students receive 403 `Teacher access required`.

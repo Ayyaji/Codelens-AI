@@ -5,7 +5,11 @@
  * sessionStorage so a signed-in tab can refresh.
  */
 
-const STATE_KEY = "codelens.mock.v1";
+import { chunkText } from "../lib/kbExtract";
+import { KB_DIFFICULTY_VALUES, KB_SOURCE_VALUES, KB_TYPE_VALUES } from "../lib/kbModel";
+import { buildKbSeed } from "./kbSeed";
+
+const STATE_KEY = "codelens.mock.v2";
 
 export class MockError extends Error {
   constructor(message, status) {
@@ -50,7 +54,7 @@ function seed() {
   const grace = "stu_grace";
   const teacher = "tch_rao";
   return {
-    v: 1,
+    v: 2,
     seq: 40,
     passwords: {
       "ada@school.edu": "student-pass",
@@ -186,32 +190,8 @@ function seed() {
       { id: "act_12", user_id: ada, type: "login", detail: {}, ts: ago(minutes(15)) },
       { id: "act_13", user_id: alan, type: "login", detail: {}, ts: ago(minutes(10)) },
     ],
-    kb: [
-      {
-        id: "kb_none",
-        content:
-          "Subscripting None raises TypeError because None is not a sequence. The fix is to check the value returned by the previous call before using brackets. Students often edit the bracket line and miss the None.",
-        source: "web",
-        proposed_by: ada,
-        status: "pending",
-        query: "Why does subscripting None raise TypeError?",
-        reviewed_by: null,
-        reviewed_at: null,
-        created_at: ago(minutes(30)),
-      },
-      {
-        id: "kb_where",
-        content:
-          "WHERE filters rows after a join and before grouping. HAVING filters groups. A wrong WHERE on a joined query keeps the extra rows, which shows up as a concept gap on SQL.",
-        source: "web",
-        proposed_by: ada,
-        status: "pending",
-        query: "When does WHERE run against a join?",
-        reviewed_by: null,
-        reviewed_at: null,
-        created_at: ago(hours(3)),
-      },
-    ],
+    kb: buildKbSeed({ ada, teacher, ago, minutes, hours }),
+    uploads: [],
   };
 }
 
@@ -220,7 +200,7 @@ function readState() {
     const raw = sessionStorage.getItem(STATE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.users)) return null;
+    if (!parsed || parsed.v !== 2 || !Array.isArray(parsed.users)) return null;
     return parsed;
   } catch {
     return null;
@@ -228,6 +208,21 @@ function readState() {
 }
 
 let state = readState() || seed();
+finishInterruptedUploads();
+
+function finishInterruptedUploads() {
+  if (!Array.isArray(state.uploads)) state.uploads = [];
+  let changed = false;
+  for (const upload of state.uploads) {
+    if (upload.status === "processing") {
+      upload.status = "failed";
+      upload.progress = 100;
+      upload.error = "Processing was interrupted. Upload the file again.";
+      changed = true;
+    }
+  }
+  if (changed) save();
+}
 
 function save() {
   try {
@@ -757,17 +752,168 @@ export async function mockActivity(token, limit = 50) {
 }
 
 function kbPublic(item) {
+  const user = item.proposed_by ? userById(item.proposed_by) : null;
   return {
     id: item.id,
-    content: item.content,
-    source: item.source,
-    proposed_by: item.proposed_by,
-    status: item.status,
-    query: item.query,
-    reviewed_by: item.reviewed_by,
-    reviewed_at: item.reviewed_at,
+    title: item.title || item.query || "Untitled",
+    content: item.content || "",
+    topic: item.topic || "",
+    tags: Array.isArray(item.tags) ? [...item.tags] : [],
+    difficulty: item.difficulty || null,
+    source: item.source || null,
+    type: item.type || "concept",
+    origin: item.origin || "teacher",
+    status: item.status || "pending",
+    proposed_by: item.proposed_by || null,
+    proposer_name: item.proposer_name || user?.name || null,
+    proposer_role: item.proposer_role || user?.role || null,
+    query: item.query || item.title || null,
+    reviewed_by: item.reviewed_by || null,
+    reviewed_at: item.reviewed_at || null,
+    reject_reason: item.reject_reason || null,
     created_at: item.created_at,
+    updated_at: item.updated_at || item.created_at,
   };
+}
+
+function cleanTags(value) {
+  const raw = Array.isArray(value) ? value : String(value || "").split(",");
+  const tags = [];
+  for (const entry of raw) {
+    const tag = String(entry || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!tag || tags.includes(tag)) continue;
+    if (tag.length > 32) fail(422, "Tags must be 32 characters or fewer");
+    tags.push(tag);
+    if (tags.length > 8) fail(422, "Use at most 8 tags");
+  }
+  return tags;
+}
+
+function applyKbFields(item, body, { partial }) {
+  const source = body || {};
+  if (!partial || source.title !== undefined) {
+    const title = String(source.title ?? item.title ?? "").trim();
+    if (!title) fail(422, "Title is required");
+    if (title.length > 140) fail(422, "Title must be 140 characters or fewer");
+    item.title = title;
+    if (source.query === undefined) item.query = title;
+  }
+  if (!partial || source.content !== undefined) {
+    const content = String(source.content ?? "").trim();
+    if (!content) fail(422, "Content is required");
+    if (content.length > 20000) fail(422, "Content is too long");
+    item.content = content;
+  }
+  if (!partial || source.topic !== undefined) {
+    const topic = String(source.topic ?? "").trim();
+    if (!topic) fail(422, "Topic is required");
+    if (topic.length > 60) fail(422, "Topic must be 60 characters or fewer");
+    item.topic = topic;
+  }
+  if (!partial || source.tags !== undefined) item.tags = cleanTags(source.tags);
+  if (!partial || source.difficulty !== undefined) {
+    const difficulty = source.difficulty ? String(source.difficulty) : "";
+    if (difficulty && !KB_DIFFICULTY_VALUES.has(difficulty)) fail(422, "Difficulty must be easy, medium, or hard");
+    item.difficulty = difficulty || null;
+  }
+  if (!partial || source.type !== undefined) {
+    const type = String(source.type || item.type || "concept");
+    if (!KB_TYPE_VALUES.has(type)) fail(422, "Unknown note type");
+    item.type = type;
+  }
+  if (!partial || source.source !== undefined) {
+    const from = String(source.source || item.source || "teacher");
+    if (!KB_SOURCE_VALUES.has(from)) fail(422, "Unknown source");
+    item.source = from;
+  }
+  item.updated_at = iso(Date.now());
+}
+
+function dayStart(value) {
+  const text = String(value || "");
+  return text.length === 10 ? `${text}T00:00:00Z` : text;
+}
+
+function dayEnd(value) {
+  const text = String(value || "");
+  return text.length === 10 ? `${text}T23:59:59Z` : text;
+}
+
+function matchesKb(item, filters, { ignoreStatus }) {
+  if (!ignoreStatus && filters.status && item.status !== filters.status) return false;
+  if (filters.topic && item.topic !== filters.topic) return false;
+  if (filters.tag && !(item.tags || []).includes(filters.tag)) return false;
+  if (filters.type && item.type !== filters.type) return false;
+  if (filters.source && item.source !== filters.source) return false;
+  if (filters.from && (item.created_at || "") < dayStart(filters.from)) return false;
+  if (filters.to && (item.created_at || "") > dayEnd(filters.to)) return false;
+  if (filters.q) {
+    const hay = [item.title, item.content, item.topic, item.query, ...(item.tags || [])].join("\n").toLowerCase();
+    if (!hay.includes(filters.q)) return false;
+  }
+  return true;
+}
+
+function kbFacets() {
+  const topics = [];
+  const tags = [];
+  const types = [];
+  const sources = [];
+  const push = (list, value) => {
+    if (value && !list.includes(value)) list.push(value);
+  };
+  for (const item of state.kb) {
+    push(topics, item.topic);
+    push(types, item.type);
+    push(sources, item.source);
+    for (const tag of item.tags || []) push(tags, tag);
+  }
+  topics.sort((a, b) => a.localeCompare(b));
+  tags.sort((a, b) => a.localeCompare(b));
+  return { topics, tags, types, sources };
+}
+
+function uploadPublic(upload) {
+  return {
+    id: upload.id,
+    filename: upload.filename,
+    media_type: upload.media_type || "",
+    size: upload.size || 0,
+    status: upload.status,
+    progress: upload.progress || 0,
+    error: upload.error || "",
+    created_at: upload.created_at,
+    kb_item_id: upload.kb_item_id || null,
+    chunks: (upload.chunks || []).map((chunk) => ({
+      index: chunk.index,
+      title: chunk.title,
+      content: chunk.content,
+    })),
+  };
+}
+
+function completeUpload(id) {
+  const upload = state.uploads.find((row) => row.id === id);
+  if (!upload || upload.status !== "processing") return;
+  if (upload.extract_error) {
+    upload.status = "failed";
+    upload.progress = 100;
+    upload.error = upload.extract_error;
+  } else {
+    try {
+      upload.chunks = chunkText(upload.text || "");
+      upload.status = "chunked";
+      upload.progress = 100;
+      upload.error = "";
+    } catch (error) {
+      upload.status = "failed";
+      upload.progress = 100;
+      upload.error = error.message || "Could not chunk that file.";
+    }
+  }
+  delete upload.text;
+  delete upload.extract_error;
+  save();
 }
 
 export async function mockPendingKb(token) {
@@ -779,41 +925,257 @@ export async function mockPendingKb(token) {
     .map(kbPublic);
 }
 
-export async function mockEditKb(token, itemId, content) {
+export async function mockSearchKb(token, params = {}) {
+  await wait(80);
+  requireTeacher(token);
+  const filters = {
+    q: String(params.q || "").trim().toLowerCase(),
+    status: String(params.status || ""),
+    topic: String(params.topic || ""),
+    tag: String(params.tag || "").trim().toLowerCase(),
+    type: String(params.type || ""),
+    source: String(params.source || ""),
+    from: String(params.from || ""),
+    to: String(params.to || ""),
+  };
+  const counts = { pending: 0, approved: 0, rejected: 0 };
+  const matched = [];
+  for (const item of state.kb) {
+    if (!matchesKb(item, filters, { ignoreStatus: true })) continue;
+    if (counts[item.status] != null) counts[item.status] += 1;
+    if (!matchesKb(item, filters, { ignoreStatus: false })) continue;
+    matched.push(item);
+  }
+  const pendingOldest = filters.status === "pending";
+  matched.sort((a, b) => {
+    const left = pendingOldest ? a.created_at : a.updated_at || a.created_at;
+    const right = pendingOldest ? b.created_at : b.updated_at || b.created_at;
+    if (left === right) return 0;
+    if (pendingOldest) return left < right ? -1 : 1;
+    return left < right ? 1 : -1;
+  });
+  const pageSize = Math.min(50, Math.max(1, Number(params.page_size) || 8));
+  const pages = Math.max(1, Math.ceil(matched.length / pageSize) || 1);
+  const page = Math.min(pages, Math.max(1, Number(params.page) || 1));
+  const start = (page - 1) * pageSize;
+  return {
+    items: matched.slice(start, start + pageSize).map(kbPublic),
+    total: matched.length,
+    page,
+    page_size: pageSize,
+    counts,
+    facets: kbFacets(),
+  };
+}
+
+export async function mockGetKb(token, itemId) {
+  await wait(60);
+  requireTeacher(token);
+  const item = state.kb.find((row) => row.id === itemId);
+  if (!item) fail(404, "Knowledge item not found");
+  return kbPublic(item);
+}
+
+export async function mockCreateKb(token, body) {
+  await wait();
+  const teacher = requireTeacher(token);
+  const origin = body?.origin === "student" || body?.origin === "ai" ? body.origin : "teacher";
+  const item = {
+    id: nextId("kb"),
+    origin,
+    status: "pending",
+    proposed_by: origin === "teacher" ? teacher.id : body?.proposed_by || null,
+    proposer_name: origin === "teacher" ? teacher.name : body?.proposer_name || (origin === "ai" ? "CodeLens guide" : "Student"),
+    proposer_role: origin === "teacher" ? "teacher" : origin,
+    query: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    reject_reason: null,
+    created_at: iso(Date.now()),
+  };
+  applyKbFields(item, { ...body, source: body?.source || (origin === "teacher" ? "teacher" : origin) }, { partial: false });
+  const autoApprove = origin === "teacher" && body?.approve !== false;
+  if (autoApprove) {
+    item.status = "approved";
+    item.reviewed_by = teacher.id;
+    item.reviewed_at = item.updated_at;
+  }
+  state.kb.unshift(item);
+  save();
+  return kbPublic(item);
+}
+
+export async function mockEditKb(token, itemId, patch) {
   await wait();
   requireTeacher(token);
   const item = state.kb.find((row) => row.id === itemId);
-  if (!item) fail(404, "Pending item not found");
-  if (item.status !== "pending") fail(409, "Only a pending item can be edited");
-  const next = String(content || "").trim();
-  if (!next) fail(422, "must not be blank");
-  item.content = next;
+  if (!item) fail(404, "Knowledge item not found");
+  const body = typeof patch === "string" ? { content: patch } : patch || {};
+  applyKbFields(item, body, { partial: true });
   save();
   return kbPublic(item);
+}
+
+export async function mockDeleteKb(token, itemId) {
+  await wait();
+  requireTeacher(token);
+  const index = state.kb.findIndex((row) => row.id === itemId);
+  if (index < 0) fail(404, "Knowledge item not found");
+  state.kb.splice(index, 1);
+  save();
+  return { id: itemId, deleted: true };
+}
+
+function reviewKb(item, teacher, action, reason) {
+  if (item.status !== "pending") fail(409, `Only a pending item can be ${action === "approve" ? "approved" : "rejected"}`);
+  item.status = action === "approve" ? "approved" : "rejected";
+  item.reviewed_by = teacher.id;
+  item.reviewed_at = iso(Date.now());
+  item.updated_at = item.reviewed_at;
+  item.reject_reason = action === "reject" ? String(reason || "").trim() : null;
 }
 
 export async function mockApproveKb(token, itemId) {
   await wait();
   const teacher = requireTeacher(token);
   const item = state.kb.find((row) => row.id === itemId);
-  if (!item) fail(404, "Pending item not found");
-  if (item.status !== "pending") fail(409, "Only a pending item can be approved");
-  item.status = "approved";
-  item.reviewed_by = teacher.id;
-  item.reviewed_at = iso(Date.now());
+  if (!item) fail(404, "Knowledge item not found");
+  reviewKb(item, teacher, "approve");
   save();
   return kbPublic(item);
 }
 
-export async function mockRejectKb(token, itemId) {
+export async function mockRejectKb(token, itemId, reason) {
   await wait();
   const teacher = requireTeacher(token);
   const item = state.kb.find((row) => row.id === itemId);
-  if (!item) fail(404, "Pending item not found");
-  if (item.status !== "pending") fail(409, "Only a pending item can be rejected");
-  item.status = "rejected";
-  item.reviewed_by = teacher.id;
-  item.reviewed_at = iso(Date.now());
+  if (!item) fail(404, "Knowledge item not found");
+  if (reason != null && !String(reason).trim()) fail(422, "A reject reason is required");
+  reviewKb(item, teacher, "reject", reason);
   save();
   return kbPublic(item);
+}
+
+export async function mockBulkKb(token, body) {
+  await wait();
+  const teacher = requireTeacher(token);
+  const ids = Array.isArray(body?.ids) ? body.ids.map((id) => String(id)) : [];
+  const action = body?.action;
+  if (!ids.length) fail(422, "Choose at least one note");
+  if (action !== "approve" && action !== "reject") fail(422, "Action must be approve or reject");
+  if (action === "reject" && !String(body?.reason || "").trim()) fail(422, "A reject reason is required");
+  const updated = [];
+  const failed = [];
+  for (const id of ids) {
+    const item = state.kb.find((row) => row.id === id);
+    if (!item) {
+      failed.push({ id, detail: "Knowledge item not found" });
+      continue;
+    }
+    if (item.status !== "pending") {
+      failed.push({ id, detail: "Only a pending item can be reviewed" });
+      continue;
+    }
+    reviewKb(item, teacher, action, body?.reason);
+    updated.push(kbPublic(item));
+  }
+  if (updated.length) save();
+  return { updated, failed };
+}
+
+export async function mockListKbUploads(token) {
+  await wait(60);
+  requireTeacher(token);
+  return state.uploads.map(uploadPublic);
+}
+
+export async function mockCreateKbUpload(token, payload) {
+  await wait(100);
+  requireTeacher(token);
+  const filename = String(payload?.filename || "").trim();
+  const lower = filename.toLowerCase();
+  const allowed = [".pdf", ".docx", ".txt", ".md", ".markdown"].some((ext) => lower.endsWith(ext));
+  if (!allowed) fail(415, "Upload a PDF, DOCX, TXT, or MD file.");
+  const size = Number(payload?.size) || 0;
+  if (size > 5_000_000) fail(413, "That file is larger than 5 MB.");
+  const upload = {
+    id: nextId("up"),
+    filename,
+    media_type: String(payload?.media_type || ""),
+    size,
+    status: "processing",
+    progress: 30,
+    error: "",
+    created_at: iso(Date.now()),
+    kb_item_id: null,
+    chunks: [],
+    text: String(payload?.text || ""),
+    extract_error: String(payload?.extract_error || ""),
+  };
+  state.uploads.unshift(upload);
+  save();
+  setTimeout(() => completeUpload(upload.id), upload.extract_error ? 250 : 700);
+  return uploadPublic(upload);
+}
+
+export async function mockApproveKbUpload(token, uploadId, body) {
+  await wait();
+  const teacher = requireTeacher(token);
+  const upload = state.uploads.find((row) => row.id === uploadId);
+  if (!upload) fail(404, "Upload not found");
+  if (upload.status !== "chunked") fail(409, "Only a chunked upload can be approved");
+  const wanted = Array.isArray(body?.chunk_indexes) ? body.chunk_indexes.map(Number) : upload.chunks.map((chunk) => chunk.index);
+  const chosen = upload.chunks.filter((chunk) => wanted.includes(chunk.index));
+  if (!chosen.length) fail(422, "Choose at least one chunk");
+  const content = chosen.map((chunk) => chunk.content.trim()).join("\n\n");
+  const item = {
+    id: nextId("kb"),
+    origin: "upload",
+    status: "approved",
+    proposed_by: teacher.id,
+    proposer_name: teacher.name,
+    proposer_role: "teacher",
+    query: null,
+    reviewed_by: teacher.id,
+    reviewed_at: iso(Date.now()),
+    reject_reason: null,
+    created_at: iso(Date.now()),
+  };
+  const base = filenameTopic(upload.filename);
+  applyKbFields(
+    item,
+    {
+      title: String(body?.title || "").trim() || base,
+      content,
+      topic: String(body?.topic || "").trim() || "Upload",
+      tags: body?.tags?.length ? body.tags : ["upload"],
+      difficulty: body?.difficulty || null,
+      source: "upload",
+      type: "document",
+    },
+    { partial: false },
+  );
+  item.reviewed_at = item.updated_at;
+  state.kb.unshift(item);
+  upload.kb_item_id = item.id;
+  upload.status = "chunked";
+  save();
+  return { upload: uploadPublic(upload), item: kbPublic(item) };
+}
+
+function filenameTopic(filename) {
+  const base = String(filename || "Uploaded note").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+  return base.slice(0, 140) || "Uploaded note";
+}
+
+export async function mockDiscardKbUpload(token, uploadId) {
+  await wait();
+  requireTeacher(token);
+  const index = state.uploads.findIndex((row) => row.id === uploadId);
+  if (index < 0) fail(404, "Upload not found");
+  if (state.uploads[index].kb_item_id) fail(409, "That upload is already in the library");
+  const id = state.uploads[index].id;
+  state.uploads.splice(index, 1);
+  save();
+  return { id, deleted: true };
 }
