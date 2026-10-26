@@ -3,6 +3,8 @@
  * The interview catalogue is added on top of these ids.
  */
 
+import { catalogue } from "./kbCatalogue";
+
 function note(fields) {
   return {
     tags: [],
@@ -130,5 +132,6 @@ export function buildKbSeed({ ada, teacher, ago, minutes, hours }) {
       reject_reason: "CPython over-allocates. A single append is amortized O(1), not always O(n). This note would teach the wrong bound.",
       created_at: ago(hours(10)),
     }),
+    ...catalogue({ teacher, ago, hours }),
   ];
 }

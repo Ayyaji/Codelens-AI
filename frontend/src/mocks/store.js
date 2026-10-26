@@ -9,7 +9,7 @@ import { chunkText } from "../lib/kbExtract";
 import { KB_DIFFICULTY_VALUES, KB_SOURCE_VALUES, KB_TYPE_VALUES } from "../lib/kbModel";
 import { buildKbSeed } from "./kbSeed";
 
-const STATE_KEY = "codelens.mock.v2";
+const STATE_KEY = "codelens.mock.v3";
 
 export class MockError extends Error {
   constructor(message, status) {
@@ -54,7 +54,7 @@ function seed() {
   const grace = "stu_grace";
   const teacher = "tch_rao";
   return {
-    v: 2,
+    v: 3,
     seq: 40,
     passwords: {
       "ada@school.edu": "student-pass",
@@ -200,7 +200,7 @@ function readState() {
     const raw = sessionStorage.getItem(STATE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || parsed.v !== 2 || !Array.isArray(parsed.users)) return null;
+    if (!parsed || parsed.v !== 3 || !Array.isArray(parsed.users)) return null;
     return parsed;
   } catch {
     return null;
