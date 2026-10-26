@@ -1,0 +1,57 @@
+# Optional. Deploys the frontend and the backend over SSM Session Manager.
+# It does not run on push. MongoDB is reached through the frontend jump host,
+# because the private subnet has no path for Session Manager unless you added
+# a NAT gateway. Run the MongoDB scripts by hand.
+#
+# Repository secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# (use the codelens-github IAM user, not your daily CLI user).
+# Repository variables: FRONTEND_INSTANCE_ID, BACKEND_INSTANCE_ID, DEPLOY_REF
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to deploy
+        type: choice
+        options:
+          - frontend
+          - backend
+          - both
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codelens-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Check out the workflow scripts
+        uses: actions/checkout@v4
+
+      - name: Deploy the frontend
+        if: inputs.target == 'frontend' || inputs.target == 'both'
+        env:
+          INSTANCE_ID: ${{ vars.FRONTEND_INSTANCE_ID }}
+          DEPLOY_REF: ${{ vars.DEPLOY_REF }}
+        run: bash deploy/ci/ssm-deploy.sh frontend
+
+      - name: Deploy the backend
+        if: inputs.target == 'backend' || inputs.target == 'both'
+        env:
+          INSTANCE_ID: ${{ vars.BACKEND_INSTANCE_ID }}
+          DEPLOY_REF: ${{ vars.DEPLOY_REF }}
+        run: bash deploy/ci/ssm-deploy.sh backend

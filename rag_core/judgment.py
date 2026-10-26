@@ -12,10 +12,11 @@ optional override so interview practice can name a skill the keyword list does n
 """
 
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict, Optional
 
-from rag_core.db import connection, init_db
+from rag_core.mongo import as_naive, iso, utcnow
+from rag_core.store import judgment_history
 
 ERROR_PATTERNS = {
     "NameError": r"NameError|name.*not defined|undefined variable",
@@ -59,23 +60,14 @@ def extract_topic(query: str) -> Optional[str]:
     return None
 
 
-def get_student_context(student_id: str, lookback_minutes: int = 30) -> Dict:
-    """Recent sessions, error counts, topic counts, and whether the student looks stuck."""
-    init_db()
-    cutoff_time = (datetime.now() - timedelta(minutes=lookback_minutes)).isoformat()
-    with connection() as conn:
-        sessions = [
-            tuple(row)
-            for row in conn.execute(
-                """
-                SELECT query, agent_used, error_type, topic, timestamp
-                FROM sessions
-                WHERE student_id = ? AND timestamp > ?
-                ORDER BY timestamp DESC
-                """,
-                (student_id, cutoff_time),
-            ).fetchall()
-        ]
+async def get_student_context(student_id: str, lookback_minutes: int = 30) -> Dict:
+    """Recent turns, error counts, topic counts, and whether the student looks stuck.
+
+    The rows come from MongoDB ``activity`` (types ``ask`` and ``test_submit``),
+    which replaced the SQLite ``sessions`` table.
+    """
+    cutoff = utcnow() - timedelta(minutes=lookback_minutes)
+    sessions = await judgment_history(student_id, cutoff)
 
     if not sessions:
         return {
@@ -89,24 +81,37 @@ def get_student_context(student_id: str, lookback_minutes: int = 30) -> Dict:
 
     error_counts = {}
     topic_counts = {}
-    for _, _, error_type, topic, _ in sessions:
+    recent = []
+    for row in sessions:
+        detail = row.get("detail") or {}
+        error_type = detail.get("error_type")
+        topic = detail.get("topic")
         if error_type:
             error_counts[error_type] = error_counts.get(error_type, 0) + 1
         if topic:
             topic_counts[topic] = topic_counts.get(topic, 0) + 1
+        recent.append(
+            {
+                "query": detail.get("query") or "",
+                "agent": detail.get("agent_used"),
+                "error": error_type,
+                "topic": topic,
+                "time": iso(row.get("ts")),
+            }
+        )
 
-    first_timestamp = datetime.fromisoformat(sessions[-1][4])
-    last_timestamp = datetime.fromisoformat(sessions[0][4])
-    time_span = (last_timestamp - first_timestamp).total_seconds() / 60
+    newest = as_naive(sessions[0].get("ts"))
+    oldest = as_naive(sessions[-1].get("ts"))
+    if hasattr(newest, "timestamp") and hasattr(oldest, "timestamp"):
+        time_span = (newest - oldest).total_seconds() / 60
+    else:
+        time_span = 0
     is_stuck = any(count >= 3 for count in error_counts.values()) or (
         len(sessions) >= 5 and time_span < 10
     )
 
     return {
-        "recent_sessions": [
-            {"query": row[0], "agent": row[1], "error": row[2], "topic": row[3], "time": row[4]}
-            for row in sessions
-        ],
+        "recent_sessions": recent,
         "error_counts": error_counts,
         "topic_counts": topic_counts,
         "time_span_minutes": round(time_span, 1),

@@ -1,66 +1,91 @@
-"""Stage web results for a teacher before they enter the knowledge base."""
+"""Stage proposed knowledge-base text until a teacher approves it.
 
-from datetime import datetime
+Web results and any other proposal are inserted into ``kb_pending`` only.
+``write_kb_document`` is the one runtime path that adds a document to Chroma,
+and only ``approve_pending`` calls it. ``python -m rag_core.build_kb`` is the
+separate, offline seed of the project's own debugging notes.
+"""
 
-from rag_core.config import get_kb_dir
-from rag_core.db import connection, init_db
+import asyncio
+import logging
 
+from rag_core.store import insert_kb, list_pending_kb, set_kb_status, update_kb_content
 
-def stage_for_approval(query: str, content: str, source: str = None):
-    """Stage new content for teacher approval."""
-    init_db()
-    with connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO kb_pending (query, content, source, timestamp, status)
-            VALUES (?, ?, ?, ?, 'pending')
-            """,
-            (query, content, source, datetime.now().isoformat()),
-        )
-    print(f"Staged for teacher approval: {query[:50]}...")
+logger = logging.getLogger("codelens.kb")
 
 
-def get_pending_items():
-    """Return pending knowledge-base items for the teacher dashboard."""
-    init_db()
-    with connection() as conn:
-        items = [
-            tuple(row)
-            for row in conn.execute(
-                "SELECT * FROM kb_pending WHERE status='pending'"
-            ).fetchall()
+def write_kb_document(content: str, query: str, source: str | None) -> None:
+    """Add one approved note to Chroma. Do not call this from the web agent."""
+    from langchain_core.documents import Document
+
+    from rag_core.agents.retrieval import get_vectorstore
+
+    get_vectorstore().add_documents(
+        [
+            Document(
+                page_content=content,
+                metadata={"source": source or "web", "query": query or ""},
+            )
         ]
-    return items
+    )
 
 
-def approve_item(item_id: int):
-    """Teacher approves an item and it is added to Chroma."""
-    init_db()
-    with connection() as conn:
-        item = conn.execute(
-            "SELECT query, content FROM kb_pending WHERE id=?",
-            (item_id,),
-        ).fetchone()
-        if not item:
-            return False
-        query, content = item[0], item[1]
-        from langchain_chroma import Chroma
-        from langchain_core.documents import Document
-        from langchain_huggingface import HuggingFaceEmbeddings
-
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        vectorstore = Chroma(persist_directory=get_kb_dir(), embedding_function=embeddings)
-        vectorstore.add_documents(
-            [Document(page_content=content, metadata={"source": "web", "query": query})]
-        )
-        conn.execute("UPDATE kb_pending SET status='approved' WHERE id=?", (item_id,))
-    print(f"Item {item_id} approved and added to the knowledge base")
-    return True
+async def stage_for_approval(
+    query: str,
+    content: str,
+    source: str | None = None,
+    proposed_by: str | None = None,
+) -> str:
+    """Queue text for a teacher. This never writes to Chroma."""
+    item_id = await insert_kb(
+        content=content,
+        source=source,
+        proposed_by=proposed_by,
+        query=query,
+        status="pending",
+    )
+    logger.info("staged kb item id=%s proposed_by=%s", item_id, proposed_by)
+    return item_id
 
 
-def reject_item(item_id: int):
-    """Teacher rejects an item. It stays in SQLite with status rejected."""
-    init_db()
-    with connection() as conn:
-        conn.execute("UPDATE kb_pending SET status='rejected' WHERE id=?", (item_id,))
-    print(f"Item {item_id} rejected")
+async def pending_items() -> list[dict]:
+    return await list_pending_kb()
+
+
+async def edit_pending(item_id: str, content: str) -> dict:
+    return await update_kb_content(item_id, content)
+
+
+async def approve_pending(item_id: str, reviewer_id: str) -> dict:
+    """Write the pending text to Chroma, then mark it approved.
+
+    The status stays ``pending`` if the vector write fails, so a retry can
+    still approve it. A second approval of an already decided item is refused.
+    """
+    from rag_core.store import find_kb
+
+    doc = await find_kb(item_id)
+    if doc is None:
+        raise LookupError(item_id)
+    if doc.get("status") != "pending":
+        raise ValueError("Only a pending item can be approved")
+    await asyncio.to_thread(
+        write_kb_document,
+        doc.get("content") or "",
+        doc.get("query") or "",
+        doc.get("source"),
+    )
+    updated = await set_kb_status(item_id, "approved", reviewer_id)
+    from rag_core.store import kb_public
+
+    return kb_public(updated)
+
+
+async def reject_pending(item_id: str, reviewer_id: str) -> dict:
+    from rag_core.store import kb_public
+
+    try:
+        updated = await set_kb_status(item_id, "rejected", reviewer_id)
+    except ValueError:
+        raise ValueError("Only a pending item can be rejected") from None
+    return kb_public(updated)

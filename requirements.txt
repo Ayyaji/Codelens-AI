@@ -7,9 +7,21 @@ langchain-groq>=1.0.0
 langchain-core>=0.3.0
 langchain-chroma>=0.1.4
 langchain-huggingface>=0.1.0
+# HuggingFaceEmbeddings imports this at runtime. The base langchain-huggingface
+# install does not, which is why build_kb failed with
+# "Could not import sentence_transformers".
+sentence-transformers>=5.2.0,<6.0.0
 langchain-community>=0.3.0
 langchain-text-splitters>=0.3.0
 ddgs>=9.0.0
 pypdf>=5.0.0
 pytest>=8.0.0
+pytest-asyncio>=0.25.0
 httpx>=0.27.0
+# Motor 3.6+ and PyMongo 4.9+ both support MongoDB 7.0. The servers run
+# mongo:7.0. MongoDB 8.x exits on kernels 6.19 through 7.0.13.
+motor>=3.6.0
+pymongo>=4.9.0
+bcrypt>=4.2.0
+PyJWT>=2.9.0
+mongomock-motor>=0.0.34

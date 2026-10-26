@@ -1,6 +1,8 @@
 # DBMS Learning Path for CodeLens AI
 
-CodeLens is an adaptive RAG assistant for JD-based interview readiness. SQLite still backs the judgment layer, and it now also stores job descriptions, cached analyses, generated tests, and a `student_profile` of weak topics and mistake patterns. Debugging help is one part of that guidance, not the whole product.
+> The running app no longer uses SQLite. Accounts, chats, personas, job descriptions, tests, submissions, the approval queue, and judgment history are MongoDB collections. The schema is in the root README under "Database design". This note is the earlier study of indexing and query shape; the same ideas (look up one student, then their recent turns) are why `activity` is indexed on `(user_id, ts)`.
+
+CodeLens is an adaptive RAG assistant for JD-based interview readiness. Debugging help is one part of that guidance, not the whole product.
 
 ## Why DBMS Matters for CodeLens
 
