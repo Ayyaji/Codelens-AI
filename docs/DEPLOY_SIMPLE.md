@@ -171,7 +171,7 @@ sudo bash deploy/simple/backend-setup.sh
 Answer the prompts:
 
 1. **MONGODB_URI** — paste the line from the database instance. It must contain the private IP, not the MongoDB public IP.
-2. **GROQ API key** — paste the key. The cursor does not move. Press Enter.
+2. **Groq API keys** — paste one key, or 3 to 5 keys separated by commas. The cursor does not move. Press Enter. The script saves them as `GROQ_API_KEYS` and also keeps the first key in `GROQ_API_KEY`.
 3. **Domain** — press Enter. The script uses `<elastic-ip-with-dashes>.sslip.io`.
 4. **Custom site origin** — press Enter. Every `https://*.vercel.app` site is already allowed. Fill this in only for a site that is not on `vercel.app`, for example `https://codelens.example.edu`.
 5. **Build the knowledge base** — press Enter (Yes). Answers stay empty until this finishes.
@@ -181,7 +181,7 @@ You can skip the prompts by setting the variables yourself:
 
 ```bash
 sudo MONGODB_URI='mongodb://codelens:PASSWORD@172.31.10.20:27017/codelens?authSource=admin' \
-  GROQ_API_KEY='gsk_...' \
+  GROQ_API_KEYS='gsk_one,gsk_two,gsk_three' \
   BUILD_KB=1 \
   CREATE_TEACHER=1 \
   TEACHER_NAME='Ada' \
@@ -196,7 +196,7 @@ What the command does:
 
 - Adds 4 GiB of swap, so the 2 GiB instance can load the embedding model.
 - Installs Docker.
-- Writes `/opt/codelens/backend.env` (mode `600`) with a generated `JWT_SECRET`, the Groq key, the MongoDB URI, and a CORS rule for `https://*.vercel.app`.
+- Writes `/opt/codelens/backend.env` (mode `600`) with a generated `JWT_SECRET`, `GROQ_API_KEY`, `GROQ_API_KEYS` (the comma-separated pool, passed into the API container through that file), the MongoDB URI, and a CORS rule for `https://*.vercel.app`. A single `GROQ_API_KEY` still works. The script prints how many keys it saved, not the key values.
 - Starts the API container with `unless-stopped` and keeps Chroma and the model cache on disk.
 - Puts Caddy in front of it for HTTPS on ports 80 and 443. Port 8000 stays on the instance itself.
 

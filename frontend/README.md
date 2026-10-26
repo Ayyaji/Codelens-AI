@@ -71,13 +71,18 @@ Mock mutations (a new chat, an approved note, a reset profile) stay in `sessionS
 | `/space` | student | Chat list, persona, past job descriptions and tests. |
 | `/upload` | student | Drag-and-drop PDF or text, or a paste box. |
 | `/analysis` | student | Skill cards, a client-side match meter, and the roadmap. |
-| `/test` | student | MCQ cards, a 20-minute timer, Monaco, xterm.js, Run and Submit. |
+| `/test` | student | MCQ cards, a 20-minute timer, Monaco, xterm.js, Run and Submit. This is the job-description practice test. |
+| `/class-tests` | student | Published class tests, with start, resume, and results. |
+| `/class-tests/:testId` | student | Timed attempt. Countdown uses the server deadline. Autosave, Run on visible cases, submit at zero. |
+| `/class-tests/:testId/results` | student | Score and, when the teacher allowed it, correct answers and explanations. |
 | `/results` | student | Score, weak-topic chart, mistake list, guidance directive. |
 | `/chat` and `/chat/:chatId` | student | Guidance chat. Opening a chat from My Space continues it. |
 | `/dashboard` | teacher | Overview cards, directive and score charts, student search. |
 | `/dashboard/students/:studentId` | teacher | Persona, activity, tests, chats. Disable, enable, reset. |
 | `/dashboard/activity` | teacher | Activity feed, polled every few seconds. |
 | `/dashboard/kb` | teacher | Library: search, filters, tabs, markdown notes, bulk review, and document upload. |
+| `/dashboard/tests` | teacher | Create and edit MCQ, coding, or mixed tests. Pick from the question bank or paste MCQs. |
+| `/dashboard/tests/:testId/results` | teacher | Attempts, scores, time taken, and a per-question breakdown. |
 
 Students who open a teacher URL are sent to My Space. Teachers who open a student URL are sent to the dashboard.
 

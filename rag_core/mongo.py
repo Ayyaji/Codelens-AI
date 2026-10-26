@@ -113,6 +113,16 @@ async def ensure_indexes(db) -> None:
     await db.activity.create_index([("ts", -1)])
     await db.activity.create_index([("user_id", 1), ("type", 1), ("ts", -1)])
 
+    # Teacher-authored timed tests. Separate from the JD ``tests`` collection.
+    await db.class_tests.create_index("created_by", name="class_tests_created_by")
+    await db.class_tests.create_index([("published", 1), ("updated_at", -1)], name="class_tests_published")
+    await db.class_tests.create_index("topic", name="class_tests_topic")
+    await db.class_tests.create_index("test_type", name="class_tests_type")
+
+    await db.class_attempts.create_index([("test_id", 1), ("user_id", 1)], name="class_attempts_test_user")
+    await db.class_attempts.create_index([("user_id", 1), ("started_at", -1)], name="class_attempts_user_started")
+    await db.class_attempts.create_index([("test_id", 1), ("status", 1)], name="class_attempts_test_status")
+
 
 async def get_db():
     """Return the application database, creating indexes on first use."""

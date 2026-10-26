@@ -22,16 +22,19 @@ COMPOSE=(docker compose --env-file "$COMPOSE_ENV" -f "$ROOT/deploy/simple/docker
 # Values passed on the command line win. Otherwise reuse the saved file.
 uri_was_set=0
 groq_was_set=0
+keys_was_set=0
 origin_was_set=0
 domain_was_set=0
 jwt_was_set=0
 [[ -v MONGODB_URI ]] && uri_was_set=1
 [[ -v GROQ_API_KEY ]] && groq_was_set=1
+[[ -v GROQ_API_KEYS ]] && keys_was_set=1
 [[ -v FRONTEND_ORIGIN ]] && origin_was_set=1
 [[ -v DOMAIN ]] && domain_was_set=1
 [[ -v JWT_SECRET ]] && jwt_was_set=1
 passed_uri="${MONGODB_URI:-}"
 passed_groq="${GROQ_API_KEY:-}"
+passed_keys="${GROQ_API_KEYS:-}"
 passed_origin="${FRONTEND_ORIGIN:-}"
 passed_domain="${DOMAIN:-}"
 passed_jwt="${JWT_SECRET:-}"
@@ -44,10 +47,15 @@ if [[ "$uri_was_set" -eq 1 ]]; then
 else
   MONGODB_URI="$(read_env MONGODB_URI "$ENV_FILE")"
 fi
-if [[ "$groq_was_set" -eq 1 ]]; then
-  GROQ_API_KEY="$passed_groq"
+if [[ "$keys_was_set" -eq 1 ]]; then
+  GROQ_KEYS_RAW="$passed_keys"
+elif [[ "$groq_was_set" -eq 1 ]]; then
+  GROQ_KEYS_RAW="$passed_groq"
 else
-  GROQ_API_KEY="$(read_env GROQ_API_KEY "$ENV_FILE")"
+  GROQ_KEYS_RAW="$(read_env GROQ_API_KEYS "$ENV_FILE")"
+  if [[ -z "$GROQ_KEYS_RAW" ]]; then
+    GROQ_KEYS_RAW="$(read_env GROQ_API_KEY "$ENV_FILE")"
+  fi
 fi
 if [[ "$origin_was_set" -eq 1 ]]; then
   FRONTEND_ORIGIN="$passed_origin"
@@ -70,20 +78,25 @@ if [[ -z "${MONGODB_URI:-}" ]]; then
   fi
   read -r -p "MONGODB_URI (the line mongo-setup.sh printed): " MONGODB_URI
 fi
-if [[ -z "${GROQ_API_KEY:-}" ]]; then
+if [[ -z "${GROQ_KEYS_RAW:-}" ]]; then
   if [[ ! -t 0 ]]; then
-    echo "Set GROQ_API_KEY and run this again." >&2
+    echo "Set GROQ_API_KEYS (comma-separated) or GROQ_API_KEY and run this again." >&2
     exit 1
   fi
-  read -r -s -p "GROQ API key: " GROQ_API_KEY
+  read -r -s -p "Groq API keys (one key, or 3 to 5 separated by commas): " GROQ_KEYS_RAW
   echo
 fi
 MONGODB_URI="$(trim "$MONGODB_URI")"
-GROQ_API_KEY="$(trim "$GROQ_API_KEY")"
-if [[ -z "$MONGODB_URI" || -z "$GROQ_API_KEY" ]]; then
-  echo "MONGODB_URI and GROQ_API_KEY are both required." >&2
+if ! mapfile -t GROQ_KEYS < <(normalize_groq_keys "$GROQ_KEYS_RAW"); then
   exit 1
 fi
+GROQ_API_KEY="${GROQ_KEYS[0]}"
+GROQ_API_KEYS="$(IFS=,; printf '%s' "${GROQ_KEYS[*]}")"
+if [[ -z "$MONGODB_URI" || -z "$GROQ_API_KEY" ]]; then
+  echo "MONGODB_URI and a Groq API key are both required." >&2
+  exit 1
+fi
+echo "Using ${#GROQ_KEYS[@]} Groq API key(s)."
 
 if [[ -z "${DOMAIN:-}" && "$domain_was_set" -eq 0 && ! -f "$HOST_FILE" && -t 0 ]]; then
   read -r -p "Domain name (leave empty to use sslip.io): " DOMAIN || true
@@ -208,6 +221,7 @@ MONGODB_DB="${MONGODB_DB:-codelens}"
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 write_env GROQ_API_KEY "$GROQ_API_KEY" "$ENV_FILE"
+write_env GROQ_API_KEYS "$GROQ_API_KEYS" "$ENV_FILE"
 write_env JWT_SECRET "$JWT_SECRET" "$ENV_FILE"
 write_env MONGODB_URI "$MONGODB_URI" "$ENV_FILE"
 write_env MONGODB_DB "${MONGODB_DB:-codelens}" "$ENV_FILE"

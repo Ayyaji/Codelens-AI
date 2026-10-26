@@ -90,6 +90,8 @@ Groq models, both set in `rag_core/llm.py`:
 
 `llama-3.3-70b-versatile` is retired on Groq's self-serve tiers. Clients are created when the API starts, not when a module is imported. Each agent call logs `agent=... latency_s=...`.
 
+Groq calls share one pool in `rag_core/llm.py`. Set `GROQ_API_KEYS` to three to five comma-separated keys, or keep a single `GROQ_API_KEY` (the fallback, also read from `GROQ_API`). Each request starts on the next key. A 429 disables that key for a short cooldown (`GROQ_KEY_COOLDOWN_SECONDS`, default 15) and retries the next key at once. The SDK's own retries are off (`max_retries=0`) so a limited key is not retried in a loop. If every key is limited, the API returns 503 `{"detail": "AI service is busy, please try again in a few seconds"}`. Key values are not logged. Error responses, including an unexpected 500, are JSON and still pass through CORS so the browser can show that detail.
+
 ## Judgment
 
 The wire values are lowercase. The rules run in this order:
@@ -128,6 +130,8 @@ Edit `.env` and set the key and a real JWT secret (at least 32 characters):
 
 ```text
 GROQ_API_KEY=your_key_here
+# Optional. Three to five keys, comma-separated. When set, this replaces GROQ_API_KEY.
+# GROQ_API_KEYS=gsk_one,gsk_two,gsk_three
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB=codelens
 JWT_SECRET=a-long-random-string
@@ -252,6 +256,8 @@ Configuration is `MONGODB_URI` (default `mongodb://localhost:27017`) and `MONGOD
 | `kb_pending` | `content`, `title`, `topic`, `tags`, `difficulty`, `type`, `origin`, `source`, `proposed_by`, `proposer_name`, `proposer_role`, `query`, `status` (`pending`, `approved`, or `rejected`), `reject_reason`, `reviewed_by`, `reviewed_at`, `created_at`, `updated_at`, `chroma_ids`. Migrated rows may have `legacy_id`. | `status`; `(status, created_at)`; `(status, updated_at desc)`; `created_at`; `topic`; `type`; `source`; `tags`; unique sparse `legacy_id` |
 | `kb_uploads` | `filename`, `media_type`, `size`, `status` (`chunked` or `failed`), `progress`, `error`, `chunks`, `kb_item_id`, `uploaded_by`, `created_at`. | `created_at desc`; `status`; `uploaded_by`; `kb_item_id` |
 | `activity` | `user_id`, `type`, `detail`, `ts`. | `(user_id, ts desc)`; `(ts desc)`; `(user_id, type, ts desc)` |
+| `class_tests` | Teacher-authored timed tests. `title`, `description`, `topic`, `test_type` (`mcq`, `coding`, or `mixed`), `duration_minutes`, `available_from`, `available_until`, `published`, `allow_retake`, `show_answers_after_submit`, `questions` (MCQ key, short-answer expected text, coding hidden cases), `created_by`, `updated_by`, `created_at`, `updated_at`. Separate from the JD `tests` collection. | `created_by`; `(published, updated_at desc)`; `topic`; `test_type` |
+| `class_attempts` | One sitting. `test_id`, `user_id`, `started_at`, `deadline` (`started_at` plus the duration), `status` (`in_progress`, `submitted`, or `expired`), `answers`, `score`, `results`, `time_taken_seconds`, `submitted_at`. | `(test_id, user_id)`; `(user_id, started_at desc)`; `(test_id, status)` |
 
 ### How the persona stays current
 
@@ -279,7 +285,9 @@ users 1──* kb_pending   (proposed_by / reviewed_by)
 users 1──* kb_uploads   (uploaded_by; kb_item_id points at kb_pending)
 ```
 
-`POST /teacher/students/{id}/reset` deletes that student's chats, persona, submissions, activity, job descriptions, and tests, then writes one `account` activity `{action: reset, by}`. The user document and any `kb_pending` rows they proposed stay.
+`POST /teacher/students/{id}/reset` deletes that student's chats, persona, submissions, activity, job descriptions, tests, and class-test attempts, then writes one `account` activity `{action: reset, by}`. The user document, class tests, and any `kb_pending` rows they proposed stay.
+
+A class-test submit writes `class_test_submit` activity and updates the persona the same way a JD submission does (`weak_topics`, `mistake_patterns`, and a score). It does not insert a JD `submissions` row, and it does not add an empty id to `jd_ids`. `GET /me/history` still lists only JD practice scores.
 
 ### Sample documents
 
@@ -334,6 +342,16 @@ Every route except `GET /`, `GET /health`, `POST /auth/register`, and `POST /aut
 | `POST` | `/test/generate` | `{ "jd_id" }` | `{ "jd_id", "questions" }` |
 | `POST` | `/run` | `{ "code", "language", "stdin"? }` | `{ "stdout", "stderr" }` |
 | `POST` | `/test/submit` | `{ "jd_id", "answers" }` | `{ "score", "weak_topics", "guidance" }` |
+| `GET` | `/class-tests` | student | published tests inside the window, plus any test this student already started |
+| `POST` | `/class-tests/{id}/start` | | attempt, server deadline, questions without answers or hidden cases |
+| `PUT` | `/class-tests/{id}/answers` | `{ "answers" }` | autosave. After the deadline this is 409 and the attempt is closed |
+| `POST` | `/class-tests/{id}/run` | `{ "question_id", "code" }` | visible cases only |
+| `POST` | `/class-tests/{id}/submit` | `{ "answers"? }` | score. A late submit grades the saved answers |
+| `GET` | `/teacher/question-bank` | `kind`, `topic` | seeded DSA coding questions and MCQs, with answers |
+| `POST` | `/teacher/question-bank/import` | `{ "text" }` or `{ "questions" }` | normalized MCQs, not stored |
+| `GET` `POST` | `/teacher/class-tests` | test body | list, or create |
+| `GET` `PUT` `DELETE` | `/teacher/class-tests/{id}` | | read, edit, delete. Delete is 409 once attempts exist |
+| `GET` | `/teacher/class-tests/{id}/attempts` | | scores, time taken, per-question results |
 
 `guidance` is `{ "directive", "message", "next_steps", "mistake_patterns" }`. `score` is 0 to 100. `answers` items are `{ "question_id", "selected" }` for an MCQ and `{ "question_id", "code", "language" }` for a coding question. A missing `chat_id` creates a chat. Another student's job description or chat is 404.
 

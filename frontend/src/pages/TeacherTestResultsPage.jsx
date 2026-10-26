@@ -1,0 +1,133 @@
+import { Fragment, useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { getClassAttempts } from "../api/client";
+import { ErrorBanner, LoadingLine, PageHeader, btnGhost } from "../components/ui";
+import { formatScore, formatWhen } from "../lib/format";
+
+function taken(seconds) {
+  if (seconds == null) return "—";
+  const total = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}m ${String(rest).padStart(2, "0")}s`;
+}
+
+export function TeacherTestResultsPage() {
+  const { testId } = useParams();
+  const [report, setReport] = useState(null);
+  const [openId, setOpenId] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    getClassAttempts(testId)
+      .then((next) => {
+        if (!cancel) setReport(next);
+      })
+      .catch((err) => {
+        if (!cancel) setError(err.message || "Could not load results.");
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [testId]);
+
+  const test = report?.test;
+  const attempts = report?.attempts || [];
+
+  return (
+    <div>
+      <PageHeader
+        kicker="Results"
+        title={test?.title || "Test results"}
+        lede="Scores, time taken, and the per-question breakdown for each attempt."
+        actions={
+          <Link to={`/dashboard/tests/${testId}`} className={btnGhost}>
+            Edit test
+          </Link>
+        }
+      />
+      <ErrorBanner message={error} />
+      {loading ? <LoadingLine label="Loading attempts…" /> : null}
+      {report ? (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <Stat label="Attempts" value={report.count} />
+          <Stat label="Finished" value={report.submitted} />
+          <Stat label="Average" value={formatScore(report.average_score)} />
+        </div>
+      ) : null}
+      <div className="overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[40rem] text-left text-sm">
+          <thead className="bg-panel text-[11px] uppercase tracking-[0.14em] text-faint">
+            <tr>
+              <th className="px-4 py-3 font-medium">Student</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Score</th>
+              <th className="px-4 py-3 font-medium">Time</th>
+              <th className="px-4 py-3 font-medium">Submitted</th>
+            </tr>
+          </thead>
+          <tbody>
+            {attempts.map((attempt) => (
+              <Fragment key={attempt.id}>
+                <tr
+                  className="cursor-pointer border-t border-line hover:bg-panel"
+                  onClick={() => setOpenId((current) => (current === attempt.id ? "" : attempt.id))}
+                >
+                  <td className="px-4 py-3">
+                    <span className="block font-medium text-paper">{attempt.student?.name}</span>
+                    <span className="block font-mono text-[11px] text-faint">{attempt.student?.email}</span>
+                  </td>
+                  <td className="px-4 py-3 text-mute">{attempt.status}</td>
+                  <td className="px-4 py-3 font-mono text-paper">{formatScore(attempt.score)}</td>
+                  <td className="px-4 py-3 font-mono text-mute">{taken(attempt.time_taken_seconds)}</td>
+                  <td className="px-4 py-3 text-mute">{formatWhen(attempt.submitted_at)}</td>
+                </tr>
+                {openId === attempt.id ? (
+                  <tr key={`${attempt.id}-detail`} className="border-t border-line">
+                    <td colSpan={5} className="bg-ink px-4 py-3">
+                      <ul className="space-y-2">
+                        {(attempt.results || []).map((result) => (
+                          <li key={result.question_id} className="text-xs text-mute">
+                            <span className={result.correct ? "text-ok" : "text-break"}>
+                              {result.correct ? "Correct" : "Missed"}
+                            </span>
+                            {" · "}
+                            {result.skill} · {result.type}
+                            {result.type === "coding" ? ` · ${result.passed ?? 0}/${result.total ?? 0}` : ""}
+                            {result.detail ? ` · ${result.detail}` : ""}
+                          </li>
+                        ))}
+                        {!(attempt.results || []).length ? <li className="text-xs text-faint">No score yet.</li> : null}
+                      </ul>
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            ))}
+            {!loading && !attempts.length ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-faint">
+                  No attempts yet.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <article className="rounded-xl border border-line bg-panel px-4 py-4">
+      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">{label}</p>
+      <p className="mt-2 font-mono text-3xl text-paper">{value}</p>
+    </article>
+  );
+}

@@ -67,6 +67,30 @@ read_env() {
   printf '%s' "$value"
 }
 
+# Split a comma-separated Groq key list. Prints one key per line.
+# Accepts a single key or up to five. Does not print the keys on failure.
+normalize_groq_keys() {
+  local raw="$1"
+  local part trimmed
+  local -a keys=()
+  raw="${raw//$'\r'/}"
+  IFS=',' read -r -a parts <<< "$raw"
+  for part in "${parts[@]}"; do
+    trimmed="$(trim "$part")"
+    [[ -z "$trimmed" ]] && continue
+    keys+=("$trimmed")
+  done
+  if [[ ${#keys[@]} -eq 0 ]]; then
+    echo "At least one Groq API key is required." >&2
+    return 1
+  fi
+  if [[ ${#keys[@]} -gt 5 ]]; then
+    echo "Provide at most 5 Groq API keys." >&2
+    return 1
+  fi
+  printf '%s\n' "${keys[@]}"
+}
+
 write_env() {
   local key="$1"
   local value="$2"
