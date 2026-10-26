@@ -26,6 +26,44 @@ def _bash(script: str) -> str:
 def test_simple_scripts_are_valid_bash():
     for name in ("lib.sh", "mongo-setup.sh", "backend-setup.sh"):
         subprocess.run(["bash", "-n", str(SIMPLE / name)], check=True)
+    subprocess.run(["bash", "-n", str(ROOT / "deploy" / "lib.sh")], check=True)
+
+
+def _warn(version: str, pretty: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            "set -euo pipefail; source deploy/simple/lib.sh; "
+            f"warn_ubuntu_release {version} {json.dumps(pretty)}; echo OK",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_ubuntu_26_04_warns_instead_of_exiting():
+    for version, pretty in (("24.04", "Ubuntu 24.04 LTS"), ("26.04", "Ubuntu 26.04.1 LTS")):
+        known = _warn(version, pretty)
+        assert known.stdout.strip() == "OK"
+        assert known.stderr == ""
+    newer = _warn("28.04", "Ubuntu 28.04 LTS")
+    assert newer.stdout.strip() == "OK"
+    assert "Ubuntu 28.04 LTS" in newer.stderr
+    assert "Continuing" in newer.stderr
+
+
+def test_docker_install_falls_back_when_the_docker_repo_lacks_the_release():
+    text = (ROOT / "deploy" / "lib.sh").read_text(encoding="utf-8")
+    assert "docker.io" in text
+    assert "docker-compose-v2" in text
+    assert "get.docker.com" in text
+    for name in ("mongo-setup.sh", "backend-setup.sh"):
+        script = (SIMPLE / name).read_text(encoding="utf-8")
+        assert "warn_ubuntu_release" in script
+        assert "This script expects Ubuntu 24.04" not in script
 
 
 def test_sslip_host_uses_dashes_and_the_uri_uses_the_private_ip():
@@ -61,11 +99,13 @@ def test_env_file_round_trip_keeps_the_mongo_uri():
 
 def test_mongo_setup_binds_the_private_ip_and_prints_a_uri():
     text = (SIMPLE / "mongo-setup.sh").read_text(encoding="utf-8")
-    assert "authorization: enabled" in text
-    assert "bindIp: 127.0.0.1,${PRIVATE_IP}" in text
+    assert "mongo:8" in text
+    assert "/var/lib/codelens-mongo" in text
+    assert "--restart unless-stopped" in text
+    assert "${PRIVATE_IP}:27017:27017" in text
+    assert "MONGO_INITDB_ROOT_USERNAME" in text
     assert "app_mongo_uri" in text
-    assert "cacheSizeGB: 0.25" in text
-    assert "mongodb-org/8.0" in text
+    assert "--wiredTigerCacheSizeGB 0.25" in text
     mode = os.stat(SIMPLE / "mongo-setup.sh").st_mode
     assert mode & stat.S_IXUSR
 

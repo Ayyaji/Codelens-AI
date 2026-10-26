@@ -57,22 +57,85 @@ ensure_swap() {
   sysctl -w vm.swappiness=10 >/dev/null
 }
 
+# Docker's own apt repository lags new Ubuntu releases. 24.04 uses that
+# repository. 26.04 and newer fall back to Ubuntu's docker.io packages, then
+# to the get.docker.com installer.
 install_docker() {
+  export DEBIAN_FRONTEND=noninteractive
   if command -v docker >/dev/null 2>&1; then
     systemctl enable --now docker
+    _ensure_docker_compose
+    _docker_group
     return 0
   fi
+
   apt-get update
   apt-get install -y ca-certificates curl
+
+  local codename=""
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")"
+  fi
+
+  if [[ -n "$codename" ]] && curl -fsSL -o /dev/null -m 20 \
+      "https://download.docker.com/linux/ubuntu/dists/${codename}/Release"; then
+    if _install_docker_from_docker_repo "$codename"; then
+      _docker_group
+      return 0
+    fi
+    echo "Docker's packages for ${codename} did not install. Falling back to Ubuntu docker.io." >&2
+    rm -f /etc/apt/sources.list.d/docker.list
+    apt-get update
+  else
+    echo "Docker's apt repo has no ${codename:-this Ubuntu release}. Installing Ubuntu docker.io." >&2
+  fi
+
+  if apt-get install -y docker.io docker-compose-v2; then
+    systemctl enable --now docker
+    _ensure_docker_compose
+    _docker_group
+    return 0
+  fi
+
+  echo "Ubuntu docker.io is unavailable. Trying https://get.docker.com." >&2
+  curl -fsSL https://get.docker.com | sh
+  systemctl enable --now docker
+  _ensure_docker_compose
+  _docker_group
+}
+
+_install_docker_from_docker_repo() {
+  local codename="$1"
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
-  # shellcheck disable=SC1091
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" \
     >/etc/apt/sources.list.d/docker.list
-  apt-get update
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  apt-get update || return 1
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+    || return 1
   systemctl enable --now docker
+}
+
+_ensure_docker_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    return 0
+  fi
+  apt-get update
+  apt-get install -y docker-compose-v2 || apt-get install -y docker-compose-plugin || true
+  if docker compose version >/dev/null 2>&1; then
+    return 0
+  fi
+  local plugin=""
+  plugin="$(dpkg -L docker-compose-v2 2>/dev/null | grep -m1 '/docker-compose$' || true)"
+  if [[ -n "$plugin" ]]; then
+    install -d /usr/local/lib/docker/cli-plugins
+    ln -sfn "$plugin" /usr/local/lib/docker/cli-plugins/docker-compose
+  fi
+}
+
+_docker_group() {
   if [[ -n "${SUDO_USER:-}" ]] && id "$SUDO_USER" >/dev/null 2>&1; then
     usermod -aG docker "$SUDO_USER"
   fi

@@ -66,7 +66,7 @@ Leave port 27017 closed to the internet. The database accepts connections only f
 EC2 → **Launch instance**.
 
 1. Name: `codelens-mongo`.
-2. AMI: **Ubuntu Server 24.04 LTS**.
+2. AMI: **Ubuntu Server 24.04 LTS** or **26.04 LTS**. A newer Ubuntu LTS also works; the script warns and continues.
 3. Instance type: **t3.micro**.
 4. Key pair: `codelens-key`.
 5. Network: the **default** VPC and a default subnet. Auto-assign public IP: **Enable** (this address is for SSH only).
@@ -79,7 +79,7 @@ EC2 → **Launch instance**.
 EC2 → **Launch instance**.
 
 1. Name: `codelens-backend`.
-2. AMI: **Ubuntu Server 24.04 LTS**.
+2. AMI: **Ubuntu Server 24.04 LTS** or **26.04 LTS**.
 3. Instance type: **t3.small**.
 4. Key pair: `codelens-key`.
 5. Network: the **default** VPC and a default subnet. Auto-assign public IP: **Enable**.
@@ -134,7 +134,7 @@ sudo bash deploy/simple/mongo-setup.sh
 
 If `git checkout` says the branch does not exist, check out the branch your team merged this guide into. If `deploy/simple/mongo-setup.sh` is missing, you are on the wrong branch.
 
-The script installs MongoDB 8 (the Ubuntu 24.04 packages), turns on authentication, listens on the instance’s **private** IP, and creates the `codelens` database and user. It prints a line like:
+The script installs Docker, runs the official MongoDB 8 image, turns on authentication, and publishes port 27017 on the instance’s **private** IP only. Data stays in `/var/lib/codelens-mongo`. It prints a line like:
 
 ```text
 mongodb://codelens:PASSWORD@172.31.10.20:27017/codelens?authSource=admin
@@ -247,7 +247,7 @@ A local `npm run dev` can also call this API. The Vite origins (`http://localhos
 | What you see | What to do |
 | --- | --- |
 | SSH times out | The SSH rule is not your current IP. Set the source to **My IP** again. You are using `ubuntu`, the `.pem` key, and (for the API) the Elastic IP. |
-| `mongo-setup.sh` cannot start MongoDB | `journalctl -u mongod -n 50` on the database instance. The AMI must be Ubuntu 24.04. |
+| `mongo-setup.sh` cannot start MongoDB | `sudo docker logs codelens-mongo --tail 50` on the database instance. Ubuntu 24.04, 26.04, and newer releases are accepted. |
 | API logs show exit 137 | The model ran out of memory. The script adds swap; re-run it. Do not start a second API container. |
 | `https://…sslip.io/health` fails, local health works | The Elastic IP must be associated **before** you run the API script. Ports 80 and 443 must be open to anywhere. Re-run `sudo bash deploy/simple/backend-setup.sh` so the sslip.io name matches the current IP. |
 | The Vercel site loads but login fails | `VITE_API_URL` must be the `https` API address with no trailing slash, and you must redeploy after changing it. |

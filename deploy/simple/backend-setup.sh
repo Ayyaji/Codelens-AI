@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One command for the API instance (Ubuntu 24.04, default VPC, Elastic IP).
+# One command for the API instance (Ubuntu 24.04, 26.04, or newer; default VPC).
 # Installs Docker, adds swap, writes /opt/codelens/backend.env, and starts
 # the API behind Caddy so Vercel can call it over HTTPS.
 set -euo pipefail
@@ -12,14 +12,7 @@ source "$ROOT/deploy/simple/lib.sh"
 
 require_root
 
-if [[ -r /etc/os-release ]]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  if [[ "${VERSION_ID:-}" != "24.04" ]]; then
-    echo "This script expects Ubuntu 24.04. This machine is ${PRETTY_NAME:-unknown}." >&2
-    exit 1
-  fi
-fi
+warn_ubuntu_release
 
 ENV_FILE=/opt/codelens/backend.env
 HOST_FILE=/opt/codelens/public-host

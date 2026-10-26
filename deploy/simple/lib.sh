@@ -1,5 +1,23 @@
 # Helpers for the two-instance deploy. Source this file; do not execute it.
 
+# 24.04 and 26.04 are the tested releases. Anything else, including a newer
+# LTS, prints a warning and continues. This function does not exit.
+warn_ubuntu_release() {
+  local version="${1:-}"
+  local pretty="${2:-}"
+  if [[ -z "$version" && -z "$pretty" && -r /etc/os-release ]]; then
+    local info=""
+    # shellcheck disable=SC1091
+    info="$(. /etc/os-release && printf '%s\n%s' "${VERSION_ID:-}" "${PRETTY_NAME:-unknown}")"
+    version="${info%%$'\n'*}"
+    pretty="${info#*$'\n'}"
+  fi
+  case "$version" in
+    24.04|26.04) return 0 ;;
+  esac
+  echo "Warning: tested on Ubuntu 24.04 and 26.04. This machine is ${pretty:-unknown}. Continuing." >&2
+}
+
 trim() {
   local value="$1"
   value="${value//$'\r'/}"
