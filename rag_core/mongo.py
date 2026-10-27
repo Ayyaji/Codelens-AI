@@ -123,6 +123,9 @@ async def ensure_indexes(db) -> None:
     await db.class_attempts.create_index([("user_id", 1), ("started_at", -1)], name="class_attempts_user_started")
     await db.class_attempts.create_index([("test_id", 1), ("status", 1)], name="class_attempts_test_status")
 
+    await db.class_question_bank.create_index("created_by", name="class_bank_created_by")
+    await db.class_question_bank.create_index([("type", 1), ("topic", 1)], name="class_bank_type_topic")
+
 
 async def get_db():
     """Return the application database, creating indexes on first use."""

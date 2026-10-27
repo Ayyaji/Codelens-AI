@@ -256,8 +256,9 @@ Configuration is `MONGODB_URI` (default `mongodb://localhost:27017`) and `MONGOD
 | `kb_pending` | `content`, `title`, `topic`, `tags`, `difficulty`, `type`, `origin`, `source`, `proposed_by`, `proposer_name`, `proposer_role`, `query`, `status` (`pending`, `approved`, or `rejected`), `reject_reason`, `reviewed_by`, `reviewed_at`, `created_at`, `updated_at`, `chroma_ids`. Migrated rows may have `legacy_id`. | `status`; `(status, created_at)`; `(status, updated_at desc)`; `created_at`; `topic`; `type`; `source`; `tags`; unique sparse `legacy_id` |
 | `kb_uploads` | `filename`, `media_type`, `size`, `status` (`chunked` or `failed`), `progress`, `error`, `chunks`, `kb_item_id`, `uploaded_by`, `created_at`. | `created_at desc`; `status`; `uploaded_by`; `kb_item_id` |
 | `activity` | `user_id`, `type`, `detail`, `ts`. | `(user_id, ts desc)`; `(ts desc)`; `(user_id, type, ts desc)` |
-| `class_tests` | Teacher-authored timed tests. `title`, `description`, `topic`, `test_type` (`mcq`, `coding`, or `mixed`), `duration_minutes`, `available_from`, `available_until`, `published`, `allow_retake`, `show_answers_after_submit`, `questions` (MCQ key, short-answer expected text, coding hidden cases), `created_by`, `updated_by`, `created_at`, `updated_at`. Separate from the JD `tests` collection. | `created_by`; `(published, updated_at desc)`; `topic`; `test_type` |
-| `class_attempts` | One sitting. `test_id`, `user_id`, `started_at`, `deadline` (`started_at` plus the duration), `status` (`in_progress`, `submitted`, or `expired`), `answers`, `score`, `results`, `time_taken_seconds`, `submitted_at`. | `(test_id, user_id)`; `(user_id, started_at desc)`; `(test_id, status)` |
+| `class_tests` | Teacher-authored timed tests. `title`, `description`, `topic`, `test_type` (`mcq`, `coding`, or `mixed`), `duration_minutes`, `available_from`, `available_until`, `published`, `allow_retake`, `show_answers_after_submit`, `shuffle_questions`, `shuffle_options`, `questions` (MCQ key, short-answer expected text, coding hidden cases), `created_by`, `updated_by`, `created_at`, `updated_at`. Separate from the JD `tests` collection. | `created_by`; `(published, updated_at desc)`; `topic`; `test_type` |
+| `class_attempts` | One sitting. `test_id`, `user_id`, `started_at`, `deadline` (`started_at` plus the duration), `status` (`in_progress`, `submitted`, or `expired`), `answers`, `score`, `results`, `time_taken_seconds`, `focus_loss_count`, `layout` (per-student shuffle, when enabled), `submitted_at`. | `(test_id, user_id)`; `(user_id, started_at desc)`; `(test_id, status)` |
+| `class_question_bank` | Questions a teacher saved from the editor. Same question shape as a class test, plus `topic`, `source`, `created_by`, `created_at`. The seeded bank is not stored here. | `created_by`; `(type, topic)` |
 
 ### How the persona stays current
 
@@ -342,18 +343,24 @@ Every route except `GET /`, `GET /health`, `POST /auth/register`, and `POST /aut
 | `POST` | `/test/generate` | `{ "jd_id" }` | `{ "jd_id", "questions" }` |
 | `POST` | `/run` | `{ "code", "language", "stdin"? }` | `{ "stdout", "stderr" }` |
 | `POST` | `/test/submit` | `{ "jd_id", "answers" }` | `{ "score", "weak_topics", "guidance" }` |
-| `GET` | `/class-tests` | student | published tests inside the window, plus any test this student already started |
+| `GET` | `/class-tests` | student | published tests inside the window, plus any test this student already started. `?include_upcoming=1` adds future tests |
 | `POST` | `/class-tests/{id}/start` | | attempt, server deadline, questions without answers or hidden cases |
 | `PUT` | `/class-tests/{id}/answers` | `{ "answers" }` | autosave. After the deadline this is 409 and the attempt is closed |
+| `POST` | `/class-tests/{id}/focus` | | increments the tab-switch count on the open attempt |
 | `POST` | `/class-tests/{id}/run` | `{ "question_id", "code" }` | visible cases only |
 | `POST` | `/class-tests/{id}/submit` | `{ "answers"? }` | score. A late submit grades the saved answers |
-| `GET` | `/teacher/question-bank` | `kind`, `topic` | seeded DSA coding questions and MCQs, with answers |
+| `GET` `POST` | `/teacher/question-bank` | `kind`, `topic` / `{ "questions" }` | seeded bank plus saved questions. POST stores teacher-reviewed questions |
 | `POST` | `/teacher/question-bank/import` | `{ "text" }` or `{ "questions" }` | normalized MCQs, not stored |
-| `GET` `POST` | `/teacher/class-tests` | test body | list, or create |
-| `GET` `PUT` `DELETE` | `/teacher/class-tests/{id}` | | read, edit, delete. Delete is 409 once attempts exist |
-| `GET` | `/teacher/class-tests/{id}/attempts` | | scores, time taken, per-question results |
+| `POST` | `/teacher/class-tests/generate` | `{ syllabus, difficulty, mcq_count, coding_count, language?, use_kb?, avoid? }` | editable drafts. Not stored. 503 when the Groq pool is busy before any question |
+| `GET` `POST` | `/teacher/class-tests` | test body | list, or create. `published: false` is a draft |
+| `GET` `PUT` `DELETE` | `/teacher/class-tests/{id}` | | read, edit, delete. Question edits and delete are 409 once attempts exist |
+| `POST` | `/teacher/class-tests/{id}/duplicate` | | unpublished copy |
+| `GET` | `/teacher/class-tests/{id}/attempts` | | scores, focus losses, per-question percent correct, and each answer |
+| `GET` | `/teacher/class-tests/{id}/attempts.csv` | | the same scores as CSV |
 
 `guidance` is `{ "directive", "message", "next_steps", "mistake_patterns" }`. `score` is 0 to 100. `answers` items are `{ "question_id", "selected" }` for an MCQ and `{ "question_id", "code", "language" }` for a coding question. A missing `chat_id` creates a chat. Another student's job description or chat is 404.
+
+`POST /teacher/class-tests/generate` asks the shared Groq pool for draft MCQs and Python coding problems. It does not publish them and it does not write a test. Coding drafts are kept only when a reference solution passes the same sandbox the student harness uses; the solution itself is dropped. Calls are chunked (three MCQs, then one coding problem) so a rate limit returns the drafts already checked, or 503 when nothing was produced. `use_kb` optionally prepends a short Chroma excerpt. No new environment variable is required. The syllabus and the key are not logged.
 
 Teacher routes. A student token receives 403.
 

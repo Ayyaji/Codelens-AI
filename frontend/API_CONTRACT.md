@@ -466,23 +466,50 @@ Student questions during an attempt omit `correct_index`, `expected`, `keywords`
 
 | Method | Path | Who | Body | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/class-tests` | student | | `{ tests: [summary + attempt] }` |
-| `GET` | `/class-tests/{id}` | student | | the attempt view. Questions only after start, or on a finished attempt |
-| `POST` | `/class-tests/{id}/start` | student | | records `started_at` and `deadline = started_at + duration`. Resumes an open attempt. 409 if already taken and retakes are off, or if the open attempt has expired |
+| `GET` | `/class-tests` | student | query `include_upcoming` | `{ tests, server_now }`. Default list is unchanged: published tests inside the window, plus any test this student already started. `include_upcoming=1` also returns published tests whose `available_from` is still in the future, with `phase: "upcoming"` and `can_start: false` |
+| `GET` | `/class-tests/{id}` | student | | the attempt view. Questions only after start, or on a finished attempt. Includes `available_from`, `phase` |
+| `POST` | `/class-tests/{id}/start` | student | | records `started_at` and `deadline = started_at + duration`. Resumes an open attempt. 409 if already taken and retakes are off, or if the open attempt has expired. A future window is still 404 |
 | `PUT` | `/class-tests/{id}/answers` | student | `{ answers }` | `{ saved, deadline, server_now }`. After the deadline: 409 `Time is up`, and the saved answers are graded |
+| `POST` | `/class-tests/{id}/focus` | student | | `{ focus_loss_count }`. One tab switch or window blur. 404 before start, 409 after the deadline. Capped at 200 |
 | `POST` | `/class-tests/{id}/run` | student | `{ question_id, code }` | visible cases only. A client stdin is ignored |
 | `POST` | `/class-tests/{id}/submit` | student | `{ answers? }` | the attempt view with `score` and `results`. After the deadline the body is ignored and the saved answers are graded |
-| `GET` | `/teacher/question-bank` | teacher | query `kind` (`mcq`, `coding`) and `topic` | `{ questions, totals: { coding, mcq } }` |
+| `GET` | `/teacher/question-bank` | teacher | query `kind` (`mcq`, `coding`) and `topic` | `{ questions, totals: { coding, mcq } }`. Seeded questions plus any the teacher saved |
+| `POST` | `/teacher/question-bank` | teacher | `{ questions }` | stores those questions on `class_question_bank`. `{ saved, questions }` |
 | `POST` | `/teacher/question-bank/import` | teacher | `{ text }` or `{ questions }` | `{ questions }` normalized MCQs. Nothing is stored |
-| `GET` | `/teacher/class-tests` | teacher | | `{ tests }` summaries, including drafts |
-| `POST` | `/teacher/class-tests` | teacher | the test, including `questions` | the test, with answers |
-| `GET` | `/teacher/class-tests/{id}` | teacher | | the full test |
-| `PUT` | `/teacher/class-tests/{id}` | teacher | any fields | the test. Question edits are 409 once an attempt exists |
+| `GET` | `/teacher/class-tests` | teacher | | `{ tests }` summaries, including drafts, `attempt_count`, and `published` |
+| `POST` | `/teacher/class-tests` | teacher | the test, including `questions` | the test, with answers. `published: false` is a draft |
+| `POST` | `/teacher/class-tests/generate` | teacher | see below | drafts only. Nothing is stored or published. 503 when every Groq key is busy before any question is produced |
+| `GET` | `/teacher/class-tests/{id}` | teacher | | the full test, plus `attempt_count` |
+| `PUT` | `/teacher/class-tests/{id}` | teacher | any fields | the test. Question edits are 409 once an attempt exists. Title, window, and `published` can still change |
+| `POST` | `/teacher/class-tests/{id}/duplicate` | teacher | | a new unpublished copy with a new id and new question ids |
 | `DELETE` | `/teacher/class-tests/{id}` | teacher | | `{ id, deleted: true }`. 409 when attempts exist |
-| `GET` | `/teacher/class-tests/{id}/attempts` | teacher | | `{ test, count, submitted, average_score, attempts }` |
+| `GET` | `/teacher/class-tests/{id}/attempts` | teacher | | `{ test, count, submitted, average_score, question_stats, attempts }`. Each attempt includes `focus_loss_count`, `answers`, and `results` |
+| `GET` | `/teacher/class-tests/{id}/attempts.csv` | teacher | | `text/csv` score rows: name, email, status, score, time, focus losses, submitted_at |
 
-`answers` items are `{ question_id, selected }` for MCQ, `{ question_id, text }` for short answer, and `{ question_id, code, language }` for coding. The countdown should use `deadline` minus the skew between `server_now` and the browser clock. One open attempt per student. `allow_retake` permits another attempt after the previous one is finished.
+`POST /teacher/class-tests/generate` body:
 
-The seeded bank is original: 15 DSA coding questions (arrays, strings, hashing, two pointers, stacks, binary search, linked list, trees, dynamic programming) and 25 MCQs (DSA, complexity, OOP, DBMS, OS, CN, aptitude).
+```json
+{
+  "syllabus": "Binary search and ACID",
+  "difficulty": "medium",
+  "mcq_count": 3,
+  "coding_count": 1,
+  "language": "python",
+  "use_kb": false,
+  "avoid": ["optional prompt to not repeat"]
+}
+```
+
+`difficulty` is `easy`, `medium`, or `hard`. `mcq_count` is 0–8 and `coding_count` is 0–4, and at least one is required. `language` other than Python is 422 when a coding question is requested. `use_kb` true adds a short excerpt from the approved Chroma notes when the index is available. A missing index does not fail the call; `warnings` says the syllabus was used on its own.
+
+MCQs are generated three at a time and coding questions one at a time, each with one repair call. The response is `{ questions, flagged, warnings, partial, busy }`. `questions` are editor drafts: an MCQ has 4 options, one `correct_index`, and an explanation. A coding question has a statement, constraints, a Python signature, starter code that matches the class-test harness, and visible and hidden cases. A generated reference solution is run through that harness and then discarded. A problem whose solution fails the cases is omitted and listed in `flagged` with a short `reason`. `busy: true` with a non-empty `questions` list means a later chunk hit the Groq pool limit; the drafts that already validated are kept. `busy` with no questions is HTTP 503 and the usual busy `detail`. The editor shows that string and keeps anything already added.
+
+`shuffle_questions` and `shuffle_options` are optional booleans on the test, default false. When either is true, the order is chosen once at `start` and stored on the attempt, so a resume shows the same paper. MCQ answers are still the option text, so shuffling options does not change the score. The teacher view keeps the original order.
+
+`phase` on a student summary is `upcoming`, `active`, `completed`, or `closed`. The open-test countdown uses `available_from` minus the skew between `server_now` and the browser clock. The attempt countdown still uses `deadline`.
+
+`answers` items are `{ question_id, selected }` for MCQ, `{ question_id, text }` for short answer, and `{ question_id, code, language }` for coding. One open attempt per student. `allow_retake` permits another attempt after the previous one is finished. `attempt_count` greater than zero means question edits are rejected; the editor locks those fields and says so.
+
+The seeded bank is original: 15 DSA coding questions (arrays, strings, hashing, two pointers, stacks, binary search, linked list, trees, dynamic programming) and 25 MCQs (DSA, complexity, OOP, DBMS, OS, CN, aptitude). Saved questions are added on top of those totals.
 
 A finished attempt updates that student's persona (`weak_topics`, `mistake_patterns`, `scores`) and writes `class_test_submit` activity. It does not write a JD submission.

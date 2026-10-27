@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createClassTest,
+  duplicateClassTest,
+  generateClassQuestions,
   getTeacherClassTest,
   importMcqQuestions,
   listQuestionBank,
+  saveQuestionBank,
   updateClassTest,
 } from "../api/client";
+import { GenerateQuestions } from "../components/GenerateQuestions";
 import { ErrorBanner, LoadingLine, PageHeader, btn, btnGhost, field } from "../components/ui";
 
 const TOPICS = ["DSA", "general", "aptitude", "OOP", "DBMS", "OS", "CN", "complexity"];
@@ -77,6 +81,8 @@ function emptyForm() {
     published: false,
     allow_retake: false,
     show_answers_after_submit: false,
+    shuffle_questions: false,
+    shuffle_options: false,
     questions: [blankQuestion("mcq")],
   };
 }
@@ -93,6 +99,8 @@ function fromTest(test) {
     published: Boolean(test.published),
     allow_retake: Boolean(test.allow_retake),
     show_answers_after_submit: Boolean(test.show_answers_after_submit),
+    shuffle_questions: Boolean(test.shuffle_questions),
+    shuffle_options: Boolean(test.shuffle_options),
     questions: (test.questions || []).map((question) => ({ ...question, keywords: question.keywords || [] })),
   };
 }
@@ -109,8 +117,11 @@ function payload(form) {
     published: form.published,
     allow_retake: form.allow_retake,
     show_answers_after_submit: form.show_answers_after_submit,
+    shuffle_questions: form.shuffle_questions,
+    shuffle_options: form.shuffle_options,
     questions: form.questions.map((question) => {
       const next = { ...question };
+      delete next.generated;
       if (question.type === "short") {
         next.keywords = Array.isArray(question.keywords)
           ? question.keywords
@@ -137,13 +148,21 @@ export function TeacherTestEditorPage() {
   const [bank, setBank] = useState([]);
   const [paste, setPaste] = useState("");
   const [importing, setImporting] = useState(false);
+  const [attemptCount, setAttemptCount] = useState(0);
+  const [savingBank, setSavingBank] = useState(false);
+  const [regenerating, setRegenerating] = useState(-1);
+  const [notice, setNotice] = useState("");
+  const generateSettings = useRef({ syllabus: "", difficulty: "medium", useKb: false, topic: "" });
 
   useEffect(() => {
     if (!testId) return undefined;
     let cancel = false;
     getTeacherClassTest(testId)
       .then((test) => {
-        if (!cancel) setForm(fromTest(test));
+        if (!cancel) {
+          setForm(fromTest(test));
+          setAttemptCount(Number(test.attempt_count) || 0);
+        }
       })
       .catch((err) => {
         if (!cancel) setError(err.message || "Could not load that test.");
@@ -199,12 +218,90 @@ export function TeacherTestEditorPage() {
     }
   }
 
+  function addGenerated(questions) {
+    setForm((current) => ({
+      ...current,
+      questions: [
+        ...current.questions.filter((question) => question.prompt && question.prompt.trim()),
+        ...questions.map((question) => ({ ...question, id: question.id || newId(), generated: true })),
+      ],
+    }));
+  }
+
+  async function regenerate(index) {
+    const question = form.questions[index];
+    if (!question || question.type === "short") {
+      setError("Short answers are written by hand.");
+      return;
+    }
+    const settings = generateSettings.current;
+    const syllabus = settings.syllabus || question.prompt || form.topic;
+    setRegenerating(index);
+    setError("");
+    try {
+      const data = await generateClassQuestions({
+        syllabus,
+        topic: form.topic,
+        difficulty: settings.difficulty || "medium",
+        mcq_count: question.type === "mcq" ? 1 : 0,
+        coding_count: question.type === "coding" ? 1 : 0,
+        language: "python",
+        use_kb: Boolean(settings.useKb),
+        avoid: [question.prompt].filter(Boolean),
+      });
+      const next = (data?.questions || [])[0];
+      if (!next) {
+        const reason = data?.flagged?.[0]?.reason;
+        setError(reason || "Could not regenerate that question.");
+        return;
+      }
+      setForm((current) => {
+        const questions = current.questions.slice();
+        questions[index] = { ...next, id: current.questions[index].id, generated: true };
+        return { ...current, questions };
+      });
+    } catch (err) {
+      setError(err.status === 503 ? err.message : err.message || "Could not regenerate that question.");
+    } finally {
+      setRegenerating(-1);
+    }
+  }
+
+  async function saveGenerated() {
+    const questions = form.questions.filter((question) => question.generated);
+    if (!questions.length) return;
+    setSavingBank(true);
+    setError("");
+    try {
+      const saved = await saveQuestionBank(questions.map(({ generated, ...question }) => question));
+      setNotice(`Saved ${saved.saved || questions.length} questions to the bank.`);
+    } catch (err) {
+      setError(err.message || "Could not save those questions to the bank.");
+    } finally {
+      setSavingBank(false);
+    }
+  }
+
+  async function duplicate() {
+    if (!testId) return;
+    setSaving(true);
+    setError("");
+    try {
+      const copy = await duplicateClassTest(testId);
+      navigate(`/dashboard/tests/${copy.id}`);
+    } catch (err) {
+      setError(err.message || "Could not duplicate this test.");
+      setSaving(false);
+    }
+  }
+
   async function save(event) {
     event.preventDefault();
     setSaving(true);
     setError("");
     try {
       const body = payload(form);
+      if (locked) delete body.questions;
       if (editing) {
         await updateClassTest(testId, body);
         navigate("/dashboard/tests");
@@ -222,6 +319,8 @@ export function TeacherTestEditorPage() {
   if (loading) return <LoadingLine label="Loading the test…" />;
 
   const addType = form.test_type === "coding" ? "coding" : "mcq";
+  const locked = attemptCount > 0;
+  const generatedCount = form.questions.filter((question) => question.generated).length;
 
   return (
     <form onSubmit={save}>
@@ -231,6 +330,14 @@ export function TeacherTestEditorPage() {
         lede="Pick MCQ for a quick quiz, Coding for DSA, or Mixed when you want both plus short answers."
         actions={
           <>
+            <span className={`font-mono text-[10px] uppercase tracking-[0.14em] ${form.published ? "text-ok" : "text-faint"}`}>
+              {form.published ? "Published" : "Draft"}
+            </span>
+            {editing ? (
+              <button type="button" className={btnGhost} onClick={duplicate} disabled={saving}>
+                Duplicate
+              </button>
+            ) : null}
             <Link to="/dashboard/tests" className={btnGhost}>
               Cancel
             </Link>
@@ -241,6 +348,13 @@ export function TeacherTestEditorPage() {
         }
       />
       <ErrorBanner message={error} />
+      {notice ? <p className="mb-4 text-sm text-mute">{notice}</p> : null}
+      {locked ? (
+        <div role="status" className="mb-4 rounded-lg border border-line bg-panel px-4 py-3 text-sm text-mute">
+          {attemptCount} attempt{attemptCount === 1 ? "" : "s"} already started, so the questions stay as they are. You can still
+          change the title, the window, and whether it is published. Duplicate the test to edit a copy.
+        </div>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <label className="block text-xs text-mute">
           Title
@@ -261,7 +375,7 @@ export function TeacherTestEditorPage() {
         </label>
         <label className="block text-xs text-mute">
           Test type
-          <select className={`${field} mt-1`} value={form.test_type} onChange={(event) => patch({ test_type: event.target.value })}>
+          <select className={`${field} mt-1`} value={form.test_type} disabled={locked} onChange={(event) => patch({ test_type: event.target.value })}>
             <option value="mcq">MCQ</option>
             <option value="coding">Coding</option>
             <option value="mixed">Mixed</option>
@@ -305,22 +419,45 @@ export function TeacherTestEditorPage() {
           />
           Show answers after submit
         </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={form.shuffle_questions} onChange={(event) => patch({ shuffle_questions: event.target.checked })} />
+          Shuffle question order per student
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={form.shuffle_options} onChange={(event) => patch({ shuffle_options: event.target.checked })} />
+          Shuffle MCQ options per student
+        </label>
       </div>
+
+      <GenerateQuestions
+        testType={form.test_type}
+        topic={form.topic}
+        locked={locked}
+        onAdd={addGenerated}
+        onSettings={(next) => {
+          generateSettings.current = next;
+        }}
+      />
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Questions</h2>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={btnGhost} onClick={() => addQuestion(blankQuestion(addType))}>
+          <button type="button" className={btnGhost} disabled={locked} onClick={() => addQuestion(blankQuestion(addType))}>
             Add {addType === "coding" ? "coding" : "MCQ"}
           </button>
           {form.test_type === "mixed" ? (
-            <button type="button" className={btnGhost} onClick={() => addQuestion(blankQuestion("short"))}>
+            <button type="button" className={btnGhost} disabled={locked} onClick={() => addQuestion(blankQuestion("short"))}>
               Add short answer
             </button>
           ) : null}
-          <button type="button" className={btnGhost} onClick={openBank}>
+          <button type="button" className={btnGhost} disabled={locked} onClick={openBank}>
             Pick from bank
           </button>
+          {generatedCount ? (
+            <button type="button" className={btnGhost} disabled={locked || savingBank} onClick={saveGenerated}>
+              {savingBank ? "Saving…" : `Save ${generatedCount} generated to bank`}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -335,16 +472,19 @@ export function TeacherTestEditorPage() {
         </div>
       ) : null}
 
-      <div className="mt-4 space-y-4">
+      <fieldset disabled={locked} className={`mt-4 space-y-4 ${locked ? "opacity-70" : ""}`}>
         {form.questions.map((question, index) => (
           <QuestionEditor
             key={`${question.id}-${index}`}
             question={question}
+            locked={locked}
+            regenerating={regenerating === index}
             onChange={(partial) => patchQuestion(index, partial)}
             onRemove={() => patch({ questions: form.questions.filter((_, item) => item !== index) })}
+            onRegenerate={question.type === "short" ? null : () => regenerate(index)}
           />
         ))}
-      </div>
+      </fieldset>
 
       {bankOpen ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-ink/70 px-4" onClick={() => setBankOpen(false)} role="presentation">
@@ -381,15 +521,25 @@ export function TeacherTestEditorPage() {
   );
 }
 
-function QuestionEditor({ question, onChange, onRemove }) {
+function QuestionEditor({ question, onChange, onRemove, onRegenerate, regenerating, locked }) {
   const keywords = Array.isArray(question.keywords) ? question.keywords.join(", ") : question.keywords || "";
   return (
     <article className="rounded-xl border border-line bg-panel p-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{question.type}</p>
-        <button type="button" className="text-xs text-faint hover:text-break" onClick={onRemove}>
-          Remove
-        </button>
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+          {question.type}
+          {question.generated ? " · generated draft" : ""}
+        </p>
+        <div className="flex items-center gap-3">
+          {onRegenerate ? (
+            <button type="button" className="text-xs text-hint hover:underline disabled:opacity-40" onClick={onRegenerate} disabled={locked || regenerating}>
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </button>
+          ) : null}
+          <button type="button" className="text-xs text-faint hover:text-break" onClick={onRemove}>
+            Remove
+          </button>
+        </div>
       </div>
       <label className="mt-3 block text-xs text-mute">
         Skill

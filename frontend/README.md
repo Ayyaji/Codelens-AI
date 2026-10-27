@@ -6,6 +6,8 @@ A student registers or signs in, lands in My Space, and can upload a job descrip
 
 A teacher signs in to the dashboard. Teachers do not register in the UI. Their accounts are created on the server (`python -m rag_core.create_teacher` on the auth backend).
 
+Class tests are a separate flow from the job-description practice test. In the test editor, Generate with AI drafts MCQs and Python coding problems into the form. The teacher edits them and saves a draft or publishes. Students see Active, Upcoming, and Completed. Upcoming shows a countdown to `available_from`. A published test with attempts keeps its questions; Duplicate makes an editable copy.
+
 This UI builds on the client in pull request #2.
 
 ## Setup

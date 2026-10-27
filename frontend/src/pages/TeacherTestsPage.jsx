@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { deleteClassTest, listTeacherClassTests } from "../api/client";
+import { Link, useNavigate } from "react-router-dom";
+import { deleteClassTest, duplicateClassTest, listTeacherClassTests } from "../api/client";
 import { ConfirmDialog, ErrorBanner, LoadingLine, PageHeader, btn, btnGhost } from "../components/ui";
 import { formatWhen } from "../lib/format";
 
@@ -12,6 +12,7 @@ export function TeacherTestsPage() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
 
   function load() {
     setLoading(true);
@@ -24,6 +25,16 @@ export function TeacherTestsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function duplicate(test) {
+    setError("");
+    try {
+      const copy = await duplicateClassTest(test.id);
+      navigate(`/dashboard/tests/${copy.id}`);
+    } catch (err) {
+      setError(err.message || "Could not duplicate that test.");
+    }
+  }
 
   async function confirmDelete() {
     if (!pending) return;
@@ -81,6 +92,11 @@ export function TeacherTestsPage() {
                   <span className={`font-mono text-[10px] uppercase tracking-[0.12em] ${test.published ? "text-ok" : "text-faint"}`}>
                     {test.published ? "Published" : "Draft"}
                   </span>
+                  {test.attempt_count ? (
+                    <span className="mt-1 block text-[11px] text-faint">
+                      {test.attempt_count} attempt{test.attempt_count === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-mute">{formatWhen(test.updated_at)}</td>
                 <td className="px-4 py-3 text-right">
@@ -90,6 +106,9 @@ export function TeacherTestsPage() {
                   <Link to={`/dashboard/tests/${test.id}`} className="mr-3 text-xs text-hint hover:underline">
                     Edit
                   </Link>
+                  <button type="button" className="mr-3 text-xs text-hint hover:underline" onClick={() => duplicate(test)}>
+                    Duplicate
+                  </button>
                   <button type="button" className="text-xs text-faint hover:text-break" onClick={() => setPending(test)}>
                     Delete
                   </button>

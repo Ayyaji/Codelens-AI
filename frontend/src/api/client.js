@@ -857,8 +857,9 @@ function asQuestions(value) {
 }
 
 export async function listClassTests() {
-  const data = await run("/class-tests", () => request("/class-tests"));
-  return asQuestions(data?.tests);
+  const data = await run("/class-tests?include_upcoming=1", () => request("/class-tests?include_upcoming=1"));
+  const tests = asQuestions(data?.tests);
+  return Object.assign(tests, { serverNow: data?.server_now || null });
 }
 
 export async function getClassTest(testId) {
@@ -874,6 +875,11 @@ export async function startClassTest(testId) {
 export async function saveClassAnswers(testId, answers) {
   const path = `/class-tests/${encodeURIComponent(testId)}/answers`;
   return run(path, () => request(path, { method: "PUT", json: { answers } }));
+}
+
+export async function recordClassFocusLoss(testId) {
+  const path = `/class-tests/${encodeURIComponent(testId)}/focus`;
+  return run(path, () => request(path, { method: "POST", json: {} }));
 }
 
 export async function runClassCode(testId, { questionId, code, language = "python" }) {
@@ -916,6 +922,41 @@ export async function deleteClassTest(testId) {
   return run(path, () => request(path, { method: "DELETE" }));
 }
 
+export async function duplicateClassTest(testId) {
+  const path = `/teacher/class-tests/${encodeURIComponent(testId)}/duplicate`;
+  return run(path, () => request(path, { method: "POST", json: {} }));
+}
+
+export async function generateClassQuestions(body) {
+  return run("/teacher/class-tests/generate", () =>
+    request("/teacher/class-tests/generate", { method: "POST", json: body }),
+  );
+}
+
+export async function downloadClassScores(testId) {
+  const path = `/teacher/class-tests/${encodeURIComponent(testId)}/attempts.csv`;
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let response;
+  try {
+    response = await fetch(`${apiBase()}${path}`, { headers });
+  } catch {
+    throw new ApiError("Could not reach the CodeLens API. Check VITE_API_URL and that the server is running.");
+  }
+  const text = await response.text();
+  if (!response.ok) {
+    let detail = text;
+    try {
+      detail = JSON.parse(text)?.detail || text;
+    } catch {
+      detail = text;
+    }
+    throw new ApiError(detailMessage(detail, "Could not export scores."), response.status);
+  }
+  return text;
+}
+
 export async function getClassAttempts(testId) {
   const path = `/teacher/class-tests/${encodeURIComponent(testId)}/attempts`;
   return run(path, () => request(path));
@@ -927,6 +968,12 @@ export async function listQuestionBank({ kind = "", topic = "" } = {}) {
   if (topic) query.set("topic", topic);
   const suffix = query.toString() ? `?${query}` : "";
   return run("/teacher/question-bank", () => request(`/teacher/question-bank${suffix}`));
+}
+
+export async function saveQuestionBank(questions) {
+  return run("/teacher/question-bank", () =>
+    request("/teacher/question-bank", { method: "POST", json: { questions } }),
+  );
 }
 
 export async function importMcqQuestions({ text, questions }) {
