@@ -1,396 +1,270 @@
 # CodeLens AI
 
-Adaptive RAG assistant for JD-based interview readiness.
+**Multi-Agent RAG System for JD-Based Interview Readiness**
 
-VTU final-year project, JSS Academy of Technical Education, 2026.
+A student uploads a job description. CodeLens extracts the skills, builds a preparation roadmap, and generates a practice test from those skills. MCQs are scored in code. Coding answers run in a sandboxed process. The result is a student profile of weak topics and mistake patterns, and the next step follows a judgment layer that chooses how much help to give: a full explanation, a hint, a gentle reminder, or a break. A guidance chat routes debugging, concept, hint, and web questions through the same judgment.
 
-A student uploads a job description. CodeLens explains each requirement, builds a preparation roadmap, and generates a test from those skills. MCQs are scored in code. Coding answers run in a sandbox. The result is a student profile of weak topics and mistake patterns, and the next step follows the same judgment layer the guidance chat already uses: full explanation, hint, gentle reminder, or a break. Debugging help is part of that guidance.
+VTU final-year project, JSS Academy of Technical Education, Bengaluru, 2026.
 
-## Problem statement
-
-Placement preparation usually starts from a job description and a pile of generic questions. A chatbot that always gives the full answer does not notice when a student is seeing a mistake for the second time, or when they have repeated it so often that more explanation will not help. A chatbot that only debugs Python never connects the practice to the role the student is actually applying for.
-
-CodeLens sits between those two. It reads the job description, tests the student against the skills in it, and decides how much help to give from the session history.
-
-## Objectives
-
-1. Turn a job description into a structured list of skills, with a short explanation of each requirement and a roadmap.
-2. Generate MCQ and coding questions from those skills, and reuse them when the same skills show up again.
-3. Score MCQs by comparison, and run coding answers against test cases in a sandboxed process.
-4. Record weak topics and mistake patterns on a student profile.
-5. Guide the next step with the existing full / hint / gentle / break judgment, including debugging help when the student is stuck on code.
-
-## Modules
-
-### 1. JD understanding
-
-`POST /jd/upload` accepts the posting as JSON text or as a PDF or text file. `GET /jd/analyse/{jd_id}` returns:
-
-```json
-{
-  "skills": [
-    {"name": "SQL", "level": "intermediate", "explanation": "The role writes queries against a relational database."}
-  ],
-  "roadmap": [
-    {"order": 1, "skill": "SQL", "goal": "Filter and join tables", "practice": "Write three joins"}
-  ]
-}
-```
-
-Text is extracted from the file in plain code. The small model is called only on a cache miss, and the parsed JSON is stored on the job description in MongoDB under a hash of the text.
-
-### 2. Test and guide
-
-`POST /test/generate` builds a short test from the skills. The answer key and the hidden coding cases stay on the server; the first coding case is returned as a sample.
-
-`POST /run` executes Python in a subprocess with a timeout, a CPU limit, and a memory limit. The editor sends the sample stdin with the code. The child process does not see `GROQ_API_KEY`.
-
-`POST /test/submit` scores the attempt. MCQs are compared in code. Coding answers are checked against their test cases in the sandbox. The larger model is asked to explain failures only. A correct paper does not call a model. Weak topics, mistake patterns, and the score are written to that student's persona, and the guidance text follows the judgment directive.
-
-Debugging is still available. `POST /ask` routes a question to the debug, concept, hint, or web agent, reads the session history, and applies the same four directives. The debug agent is how a student gets unstuck while practising, not a separate product.
+**Live demo:** [codelens-ai-green.vercel.app](https://codelens-ai-green.vercel.app)  
+**Walkthrough:** [demo video](https://drive.google.com/file/d/1DapVEo4NcRaN6b_85SIq0d2oVGZ84Cvh/view) (anyone with the link can view)
 
 ## Architecture
 
-```text
-JD upload
-  -> extract text (PDF or plain text)
-  -> MongoDB jds, keyed by content hash
-  -> small model, only on a cache miss
-  -> { skills, roadmap }
+```mermaid
+flowchart TB
+  browser[Browser]
+  fe[React / Vite frontend<br/>hosted on Vercel]
+  caddy[Caddy<br/>HTTPS reverse proxy]
+  api[FastAPI in Docker<br/>on EC2]
+  mongo[(MongoDB 7<br/>separate EC2)]
+  chroma[Chroma vector index<br/>ingestion, chunking,<br/>all-MiniLM-L6-v2 embeddings]
+  groq[Groq LLM<br/>gpt-oss-20b / gpt-oss-120b<br/>multi-key 429 rotation]
+  sandbox[Python sandbox<br/>timeout, CPU, memory limits]
 
-Test
-  -> reuse questions when the skill list matches
-  -> small model writes MCQs and stdin/stdout coding tasks
-  -> submit
-       MCQ: compare the selected option
-       code: sandbox (timeout, CPU, memory) against test cases
-       large model: explain failures only
-  -> diagnoser writes the persona and a submission
-  -> judgment reads activity -> full | hint | gentle | break
-  -> guide returns the message and the next practice step
+  subgraph jdPipe [JD practice pipeline]
+    jda[JD Analyser]
+    qg[Question Generator]
+    ev[Evaluator]
+    di[Diagnoser]
+    gu[Guide]
+    jda --> qg --> ev --> di --> gu
+  end
 
-Guidance chat
-  POST /ask
-    -> router (keywords first, small model if the query is ambiguous)
-    -> judgment reads MongoDB activity
-    -> debug | concept | hint | web
-    -> activity row, persona note, chat messages
-    -> web results stop in kb_pending
-    -> { answer, agent_used, directive, chat_id }
+  subgraph chatPipe [Guidance chat]
+    router[Router]
+    concept[Concept]
+    debug[Debug]
+    hint[Hint]
+    web[Web]
+    router --> concept
+    router --> debug
+    router --> hint
+    router --> web
+  end
+
+  browser --> fe
+  fe -->|JSON + Bearer JWT| caddy --> api
+  api --> jdPipe
+  api --> chatPipe
+  api --> mongo
+  ev --> sandbox
+  concept --> chroma
+  debug --> chroma
+  hint --> chroma
+  jda --> groq
+  qg --> groq
+  ev -.->|explains failures only| groq
+  gu --> groq
+  router -.->|ambiguous queries| groq
+  concept --> groq
+  debug --> groq
+  hint --> groq
+  web --> groq
 ```
 
-Application state lives in MongoDB. Retrieved debugging notes live in Chroma (`codelens_kb`). A web result does not enter Chroma until a teacher approves it.
+The React client on Vercel calls the API over HTTPS. On the documented beginner path, Caddy terminates TLS on the API instance and reverse-proxies to the FastAPI container. Application state lives in MongoDB 7 on a second EC2 instance. Retrieved debugging notes live in a local Chroma index. The two stores are not joined.
 
-Groq models, both set in `rag_core/llm.py`:
+Two paths share the same models and judgment layer:
 
-| Use | Model |
+1. **JD practice.** `POST /jd/upload` accepts JSON text or a PDF/text file (2 MB limit). Text is extracted in plain code. `GET /jd/analyse/{jd_id}` uses the small Groq model only on a cache miss, keyed by a hash of the JD text in MongoDB, and returns skills plus a roadmap. `POST /test/generate` asks the small model for 4 MCQs and 2 coding questions, and reuses a stored test when the skill list matches. `POST /run` executes Python in a subprocess that does not inherit API keys. `POST /test/submit` compares MCQs in code, runs coding answers against hidden test cases in the sandbox, and calls the large model only to explain failures. The diagnoser is plain counting: it writes weak topics and mistake patterns to the student persona. The guide then chooses a directive and the next practice step.
+
+2. **Guidance chat.** `POST /ask` sends the query to the router. Obvious cases (a "hint" keyword, or a recognized error type) stay in plain code; otherwise the small model classifies the query as debug, concept, hint, or web. Judgment reads recent activity and returns `full`, `hint`, `gentle`, or `break`. Concept, debug, and hint retrieve `k=2` chunks from Chroma and call the large model. The web agent searches with DuckDuckGo (`ddgs`, up to 3 results), summarises with the large model, and stages raw results in `kb_pending`. A web result does not enter Chroma until a teacher approves it.
+
+Teachers can also author timed class tests (MCQ, coding, or mixed), separate from the JD practice tests. Students register themselves. Teachers cannot self-register; they are created with `python -m rag_core.create_teacher`.
+
+## Features
+
+- JD upload (PDF or text), skill extraction, and a per-skill roadmap, with analysis cached by content hash
+- Generated interview practice tests (4 MCQs and 2 stdin/stdout coding tasks), reused when the skill list matches
+- Deterministic MCQ scoring and sandboxed Python execution (timeout, CPU and memory limits, 20,000 character cap; only Python is accepted)
+- Student persona: weak topics, mistake patterns, scores, and linked job descriptions
+- Adaptive guidance directives: `full`, `hint`, `gentle`, `break`, applied to both test feedback and chat
+- Guidance chat routed to concept, debug, hint, or web agents, with session history stored in MongoDB
+- Local Chroma knowledge base seeded from `knowledge_base/python_error.txt` (chunks of 500 characters, 50-character overlap, `all-MiniLM-L6-v2` embeddings)
+- Teacher knowledge-base library: review, approve, reject, and document upload; only approved items are written to Chroma
+- Teacher dashboard: class overview, student personas, activity feed, and class-test authoring
+- JWT auth (`Authorization: Bearer`, HS256, 7-day TTL) and bcrypt password hashes
+- Groq key pool with immediate rotation on HTTP 429 and a short cooldown; HTTP 503 when every key is limited
+
+## Tech stack
+
+| Layer | Tools |
 | --- | --- |
-| Routing, JD parsing, question generation | `openai/gpt-oss-20b` |
-| Explanations, including why a test failed | `openai/gpt-oss-120b` |
+| Frontend | React 18, Vite 6, React Router 6, Tailwind CSS, Monaco Editor, xterm.js, Recharts. Hosted on Vercel (`frontend/`, SPA rewrites in `frontend/vercel.json`) |
+| API | FastAPI, Uvicorn (one worker in the production image), Pydantic v2, Python 3.10+ (image is Python 3.11) |
+| Agents and RAG | Custom agents in `rag_core/agents/` and `rag_core/router.py`. LangChain wrappers: `langchain-groq` (`ChatGroq`), `langchain-chroma`, `langchain-huggingface`, `langchain-text-splitters`, `langchain-community`. There is no LangGraph in the repo today |
+| Models | Groq `openai/gpt-oss-20b` (routing, JD parsing, question generation) and `openai/gpt-oss-120b` (explanations, including failed tests). Embeddings: `all-MiniLM-L6-v2` |
+| Data | MongoDB 7.0 via Motor / PyMongo. Chroma on disk (`CODELENS_KB`, default `codelens_kb/`) |
+| Auth and security | bcrypt, PyJWT HS256, CORS (`CORS_ORIGINS`, `CORS_ORIGIN_REGEX` for `https://*.vercel.app` on the simple deploy) |
+| Code execution | `rag_core/sandbox/runner.py` (subprocess + `resource.setrlimit` when available) |
+| Web search | `ddgs` |
+| Deploy | Docker (`Dockerfile`, `deploy/simple/docker-compose.yml`), Caddy 2.11 for HTTPS on the beginner path, optional three-server layout with Nginx in `docs/DEPLOY_AWS.md` |
 
-`llama-3.3-70b-versatile` is retired on Groq's self-serve tiers. Clients are created when the API starts, not when a module is imported. Each agent call logs `agent=... latency_s=...`.
+## Screenshots and demo
 
-Groq calls share one pool in `rag_core/llm.py`. Set `GROQ_API_KEYS` to three to five comma-separated keys, or keep a single `GROQ_API_KEY` (the fallback, also read from `GROQ_API`). Each request starts on the next key. A 429 disables that key for a short cooldown (`GROQ_KEY_COOLDOWN_SECONDS`, default 15) and retries the next key at once. The SDK's own retries are off (`max_retries=0`) so a limited key is not retried in a loop. If every key is limited, the API returns 503 `{"detail": "AI service is busy, please try again in a few seconds"}`. Key values are not logged. Error responses, including an unexpected 500, are JSON and still pass through CORS so the browser can show that detail.
+The public site is the sign-in and registration screens. Visiting `/` redirects guests to `/login`.
 
-## Judgment
+![Sign-in](docs/screenshots/login.png)
 
-The wire values are lowercase. The rules run in this order:
+![Register](docs/screenshots/register.png)
 
-| Directive | When it is chosen |
-| --- | --- |
-| `full` | No recent history. Also when the student is already stuck and still needs the whole explanation. |
-| `hint` | This error is already in the recent history, and the student is not flagged as stuck. An explicit hint request uses this too. |
-| `gentle` | The question continues a topic from the last few sessions. |
-| `break` | The same error has already been logged four or more times. Give the answer, and tell the student to rest. |
+Walkthrough video: [CodeLens AI demo](https://drive.google.com/file/d/1DapVEo4NcRaN6b_85SIq0d2oVGZ84Cvh/view)
 
-Stuck means the same error has been logged at least three times, or five turns landed inside ten minutes. Interview skills that are not in the keyword list are passed into the same function, so a repeated SQL miss can come back as `gentle` and a repeated `NameError` can come back as `break`.
+## Local setup
 
-## Setup
+You need Python 3.10 or newer, Node 18 or newer, and Docker (or a local MongoDB 7 server) on port 27017.
 
-Python 3.10 or newer, and Node 18 or newer for the React client. The UI in `frontend/` was built by Arjun. It calls this API through `VITE_API_URL` (default `http://localhost:8000`). Fixture JSON stays behind `VITE_USE_MOCKS`, which is off.
+### Backend
 
-The API creates MongoDB indexes on startup. MongoDB has to be running first (`docker compose up -d`, or a local MongoDB server). `python -m rag_core.build_kb` builds the debugging notes used by `POST /ask`. That command needs `sentence-transformers`, which is listed in `requirements.txt` because `langchain-huggingface` does not install it on its own. JD upload, analysis, and the test do not read that index. Those notes are the project's own seed corpus. Anything a student session proposes waits for a teacher.
-
-On startup the API loads the `all-MiniLM-L6-v2` embedding model and, when the index exists, opens it. That work used to land on the first `POST /ask`. The server log line `embedding model ready` means a guidance question will not wait on the model load.
-
-### Windows (PowerShell)
-
-From the repo root:
-
-```powershell
+```bash
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+source venv/bin/activate          # Windows PowerShell: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-If activation is blocked, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in that window, or call `.\venv\Scripts\python.exe` instead of `python` after the venv exists.
-
-Edit `.env` and set the key and a real JWT secret (at least 32 characters):
-
-```text
-GROQ_API_KEY=your_key_here
-# Optional. Three to five keys, comma-separated. When set, this replaces GROQ_API_KEY.
-# GROQ_API_KEYS=gsk_one,gsk_two,gsk_three
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB=codelens
-JWT_SECRET=a-long-random-string
-```
-
-### MongoDB on Windows
-
-Either of these is enough. The API uses `MONGODB_URI` (default `mongodb://localhost:27017`) and `MONGODB_DB` (default `codelens`).
-
-Docker Desktop, from the repo root:
-
-```powershell
-docker compose up -d
-```
-
-Or MongoDB Community Server, which installs a Windows service on port 27017:
-
-```powershell
-winget install MongoDB.Server
-```
-
-`.\start-dev.ps1` checks port 27017 and runs `docker compose up -d` when Docker is available and nothing is listening. Create the first teacher (students register themselves in the client; teachers cannot):
-
-```powershell
+cp .env.example .env
+# Edit .env and set the variables listed below. Do not commit it.
+docker compose up -d              # starts mongo:7.0
 python -m rag_core.create_teacher --name "Ada Rao" --email ada@school.edu --password "a long secret"
-```
-
-If an older `codelens.db` is still around:
-
-```powershell
-python -m rag_core.migrate_sqlite
-```
-
-That prints a one-time password for each migrated student id. There is no password-reset route yet.
-
-Build the knowledge base, then start the API:
-
-```powershell
-python -m rag_core.build_kb
+python -m rag_core.build_kb       # seeds Chroma from knowledge_base/; needs sentence-transformers
 uvicorn rag_core.api:app --reload --port 8000
 ```
 
-In a second window, start the client:
+On startup the API pings MongoDB, creates indexes, builds the Groq clients, and warms the embedding model so the first `POST /ask` does not pay that cost. The log line `embedding model ready` means the guidance path is ready. JD upload and tests do not require the Chroma index.
 
-```powershell
+### Frontend
+
+```bash
 cd frontend
+# Copy frontend/.env.example to frontend/.env and set VITE_API_URL if the API is not at http://localhost:8000
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173. One window for both processes:
+Open http://localhost:5173. One command for both processes: `./start-dev.sh` or, on Windows, `.\start-dev.ps1`.
 
-```powershell
-.\start-dev.ps1
-```
-
-### Linux and macOS
-
-From the repo root:
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-Edit `.env` and set the key and a real JWT secret, same variables as on Windows. Start MongoDB with `docker compose up -d` or a local `mongod` on port 27017. `./start-dev.sh` does the Docker check. Then create a teacher and build the seed knowledge base:
-
-```bash
-python -m rag_core.create_teacher --name "Ada Rao" --email ada@school.edu --password "a long secret"
-python -m rag_core.build_kb
-uvicorn rag_core.api:app --reload --port 8000
-```
-
-In a second terminal, start the client:
-
-```bash
-cd frontend && npm install && npm run dev
-```
-
-Open http://localhost:5173. One terminal for both processes:
-
-```bash
-./start-dev.sh
-```
+If an older `codelens.db` is still around, `python -m rag_core.migrate_sqlite` copies it into MongoDB and prints a one-time password for each migrated student. There is no password-reset route.
 
 ### Tests
 
-The API tests mock the model. They do not need a key:
+The API tests mock the model and do not need a Groq key:
 
 ```bash
 pytest
 ```
 
-The client production build:
+Client production build: `cd frontend && npm run build`. Leave `VITE_USE_MOCKS` unset or `false` unless you want the fixture client in `frontend/src/mocks/`.
+
+`student_portal/` is an earlier guidance-chat UI. It posts a `student_id` and does not send a bearer token, so it no longer reaches this API. The React app in `frontend/` is the client this backend serves.
+
+### Environment variables
+
+Set these in `.env` at the repo root (see `.env.example`) and, for the client, in `frontend/.env`. Names only; put values in those files, not in the README.
+
+**API**
+
+| Name | Role |
+| --- | --- |
+| `GROQ_API_KEYS` | Comma-separated Groq key pool (at most five). When set, this is the source of keys |
+| `GROQ_API_KEY` | Single-key fallback if `GROQ_API_KEYS` is empty (`GROQ_API` is also read) |
+| `GROQ_KEY_COOLDOWN_SECONDS` | How long a key that returned 429 sits out (default 15, clamped 1–120) |
+| `MONGODB_URI` | MongoDB connection string |
+| `MONGODB_DB` | Database name |
+| `JWT_SECRET` | HS256 signing secret (set a long random value before sharing the API) |
+| `CORS_ORIGINS` | Comma-separated browser origins. Used for a custom frontend origin, or left empty when a regex covers Vercel |
+| `CORS_ORIGIN_REGEX` | Optional full-`Origin` pattern. The simple deploy sets this so every `https://*.vercel.app` site can call the API |
+| `CODELENS_KB` | Directory of the Chroma index |
+| `CODELENS_LOW_MEMORY` | Set to `1` in the production image to encode embeddings on CPU with batch size 1 |
+| `BCRYPT_ROUNDS` | bcrypt cost (default 12) |
+| `CODELENS_MONGO_MOCK` | Test helper; set to `1` only in tests |
+| `CODELENS_SHORT_ANSWER_LLM` | Class-test short-answer grading; set to `0` to disable the model call |
+| `CODELENS_DB` | Legacy SQLite path, used only by the migration script |
+
+**Frontend**
+
+| Name | Role |
+| --- | --- |
+| `VITE_API_URL` | Base URL of the FastAPI app, no trailing slash. Vite reads this at build time |
+| `VITE_USE_MOCKS` | `true` serves fixtures instead of calling the API |
+| `VITE_MOCK_ENDPOINTS` | Optional comma-separated list that mocks only named calls |
+
+The beginner deploy script also accepts `FRONTEND_ORIGIN`, `DOMAIN`, `BUILD_KB`, `CREATE_TEACHER`, and `REBUILD`. Those are script inputs; the script writes the API variables above into the instance env file.
+
+## API example
+
+The API listens on port 8000 locally (`rag_core.api:app`). Student routes take the user from the bearer token. A `student_id` in a request body is ignored.
+
+Health (no authentication):
 
 ```bash
-cd frontend && npm install && npm run build
+curl -s http://localhost:8000/health
 ```
 
-`student_portal/` is the earlier guidance chat. It still posts a `student_id` and does not send a bearer token, so it no longer reaches the API. The React client in `frontend/` is the one this backend serves. See `frontend/README.md` and `frontend/API_CONTRACT.md`. Existing screens read `localStorage` key `codelens.token` and send `Authorization: Bearer`. Login, My Space, and the teacher dashboard are built in the frontend branch.
-
-## Database design
-
-Application data is in MongoDB. Chroma (`codelens_kb`, on disk under `chroma_db/`) is only the vector index of debugging notes. The two stores are not joined. A document reaches Chroma from a running server only when a teacher approves a row in `kb_pending`. `python -m rag_core.build_kb` is the offline seed of the project's own notes in `knowledge_base/`.
-
-Configuration is `MONGODB_URI` (default `mongodb://localhost:27017`) and `MONGODB_DB` (default `codelens`). The driver is Motor. `python -m rag_core.init_db` pings the server and prints the indexes. Timestamps are stored as naive UTC and returned as ISO-8601 with a `Z`.
-
-`user_id` on every learning document is the string form of `users._id`. Student routes take that id from the JWT. A `student_id` field in a request body is ignored.
-
-### Collections
-
-| Collection | Document | Indexes |
-| --- | --- | --- |
-| `users` | `name`, `email` (lowercased), `password_hash` (bcrypt), `role` (`student` or `teacher`), `disabled`, `created_at`. Migrated accounts also have `legacy_student_id`. | unique `email`; `role`; unique sparse `legacy_student_id` |
-| `chats` | `user_id`, `title` (first query, trimmed to 80 characters), `messages[]`, `created_at`, `updated_at`. Each message is `{role, content, directive, agent_used, ts}`. User messages store `directive` and `agent_used` as null. | `user_id`; `(user_id, updated_at desc)` |
-| `personas` | One document per student. `user_id`, `weak_topics[]`, `mistake_patterns[]`, `scores[{test_id, score, created_at}]`, `jd_ids[]`, `learning_notes[]`, `updated_at`. | unique `user_id` |
-| `jds` | `_id` is a uuid hex string. `user_id`, `content_hash`, `filename`, `raw_text`, `analysis` (cached `{skills, roadmap}` or null), `created_at`. | `user_id`; `content_hash` |
-| `tests` | `jd_id`, `user_id`, `cache_key` (hash of the skill list), `questions` (includes the answer key), `created_at`. | unique `jd_id`; `cache_key`; `user_id` |
-| `submissions` | `user_id`, `jd_id`, `score`, `answers`, `weak_topics`, `mistake_patterns`, `created_at`. `_id` is the `test_id` returned by history. | `(user_id, created_at desc)` |
-| `kb_pending` | `content`, `title`, `topic`, `tags`, `difficulty`, `type`, `origin`, `source`, `proposed_by`, `proposer_name`, `proposer_role`, `query`, `status` (`pending`, `approved`, or `rejected`), `reject_reason`, `reviewed_by`, `reviewed_at`, `created_at`, `updated_at`, `chroma_ids`. Migrated rows may have `legacy_id`. | `status`; `(status, created_at)`; `(status, updated_at desc)`; `created_at`; `topic`; `type`; `source`; `tags`; unique sparse `legacy_id` |
-| `kb_uploads` | `filename`, `media_type`, `size`, `status` (`chunked` or `failed`), `progress`, `error`, `chunks`, `kb_item_id`, `uploaded_by`, `created_at`. | `created_at desc`; `status`; `uploaded_by`; `kb_item_id` |
-| `activity` | `user_id`, `type`, `detail`, `ts`. | `(user_id, ts desc)`; `(ts desc)`; `(user_id, type, ts desc)` |
-| `class_tests` | Teacher-authored timed tests. `title`, `description`, `topic`, `test_type` (`mcq`, `coding`, or `mixed`), `duration_minutes`, `available_from`, `available_until`, `published`, `allow_retake`, `show_answers_after_submit`, `shuffle_questions`, `shuffle_options`, `questions` (MCQ key, short-answer expected text, coding hidden cases), `created_by`, `updated_by`, `created_at`, `updated_at`. Separate from the JD `tests` collection. | `created_by`; `(published, updated_at desc)`; `topic`; `test_type` |
-| `class_attempts` | One sitting. `test_id`, `user_id`, `started_at`, `deadline` (`started_at` plus the duration), `status` (`in_progress`, `submitted`, or `expired`), `answers`, `score`, `results`, `time_taken_seconds`, `focus_loss_count`, `layout` (per-student shuffle, when enabled), `submitted_at`. | `(test_id, user_id)`; `(user_id, started_at desc)`; `(test_id, status)` |
-| `class_question_bank` | Questions a teacher saved from the editor. Same question shape as a class test, plus `topic`, `source`, `created_by`, `created_at`. The seeded bank is not stored here. | `created_by`; `(type, topic)` |
-
-### How the persona stays current
-
-A chat turn calls `note_chat`, which upserts the persona and appends a learning note (`$slice` keeps the last 100). Uploading a job description calls `remember_jd` and `$addToSet`s `jd_ids`. Submitting a test calls `apply_attempt`: `weak_topics` and `mistake_patterns` are replaced with that attempt, the score is pushed (last 200 kept), and the job description is added to `jd_ids`. `GET /me/persona` hydrates `jd_ids` into `{jd_id, filename, created_at}` and returns that list as `jds`. `GET /me/history` reads job descriptions and submissions directly. `persona.scores` is a denormalized copy of those submissions.
-
-### Judgment history
-
-`get_student_context` reads `activity` documents whose `type` is `ask` or `test_submit`, newer than the lookback window (30 minutes), newest first. Chat messages are not the judgment source. The activity `detail` carries `topic`, `error_type`, and `directive`, so a topic that is not in the query text still counts. The rules are unchanged: stuck at three of the same error or five turns inside ten minutes; `break` at four of the same error.
-
-Other activity types, recorded for the teacher feed and not read by judgment: `register`, `login`, `jd_upload`, `jd_analyse`, `test_generate`, `run` (language and code length only), `account` (disable or reset).
-
-### Knowledge-base gate
-
-`stage_for_approval` inserts a `kb_pending` document with `status: pending` and `origin: ai`. The web agent uses only that function. `write_kb_document` runs when a teacher approves a pending note, creates a note with `approve` left on (the default), bulk-approves, or accepts upload chunks. It writes the Chroma index in `CODELENS_KB` (`codelens_kb`). If Chroma raises, a single approve or create stays `pending` and the API returns 502. A bulk id that fails is listed in `failed` and stays `pending`. Deleting an approved note removes its Chroma vectors first. Editing a pending row and rejecting a row do not write to Chroma. Editing an approved note's title, content, or source replaces its vectors. A second approve or reject returns 409.
-
-### Relationships
-
-```text
-users 1──* chats
-users 1──1 personas
-users 1──* jds 1──1 tests
-users 1──* submissions
-users 1──* activity
-users 1──* kb_pending   (proposed_by / reviewed_by)
-users 1──* kb_uploads   (uploaded_by; kb_item_id points at kb_pending)
-```
-
-`POST /teacher/students/{id}/reset` deletes that student's chats, persona, submissions, activity, job descriptions, tests, and class-test attempts, then writes one `account` activity `{action: reset, by}`. The user document, class tests, and any `kb_pending` rows they proposed stay.
-
-A class-test submit writes `class_test_submit` activity and updates the persona the same way a JD submission does (`weak_topics`, `mistake_patterns`, and a score). It does not insert a JD `submissions` row, and it does not add an empty id to `jd_ids`. `GET /me/history` still lists only JD practice scores.
-
-### Sample documents
+Expected when MongoDB is reachable:
 
 ```json
-{
-  "users": {
-    "name": "Meera",
-    "email": "meera@college.edu",
-    "password_hash": "$2b$12$...",
-    "role": "student",
-    "disabled": false,
-    "created_at": "2026-10-21T05:00:00"
-  },
-  "personas": {
-    "user_id": "6716...",
-    "weak_topics": ["SQL"],
-    "mistake_patterns": ["missing WHERE"],
-    "scores": [{"test_id": "6717...", "score": 50, "created_at": "2026-10-21T05:10:00"}],
-    "jd_ids": ["a1b2c3..."],
-    "learning_notes": ["score 50.0 weak SQL"],
-    "updated_at": "2026-10-21T05:10:00"
-  },
-  "activity": {
-    "user_id": "6716...",
-    "type": "test_submit",
-    "detail": {"jd_id": "a1b2c3...", "score": 50, "topic": "SQL", "error_type": "missing WHERE", "directive": "full"},
-    "ts": "2026-10-21T05:10:00"
-  }
-}
+{"status":"ok","mongo":"ok"}
 ```
 
-### Migrating an old SQLite file
+If the database is down the status is 503 with `"mongo": "error"`. The body never includes the URI.
 
-`python -m rag_core.migrate_sqlite` reads `codelens.db` (or `--sqlite PATH`). Each legacy `student_id` becomes a user with `legacy_student_id`, email `{slug}@migrated.codelens.local`, and a random password printed once. Sessions become one chat titled "Migrated history" plus `ask` activity. Profiles become personas. Job descriptions are assigned to the first profile that names them. Knowledge-base rows keep their status and `legacy_id`. Approved rows are not written to Chroma again. Running the script twice skips users that already have that `legacy_student_id`.
+Login, then ask a guidance question. Use an account you created locally; teachers are created with `create_teacher`, students with `POST /auth/register` or the Register page.
 
-## API
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@example.com","password":"your-password"}' \
+  | python -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-Every route except `GET /`, `GET /health`, `POST /auth/register`, and `POST /auth/login` requires `Authorization: Bearer <token>`. The token is HS256, lasts 7 days, and carries `sub` and `role`. Role and the disabled flag are loaded from MongoDB on each request. A disabled account gets 403. Register always creates a student. A body that asks for `role: teacher` is 403. Teachers are created with `python -m rag_core.create_teacher`.
+curl -s -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"Why do I get a NameError in Python?"}'
+```
 
-| Method | Path | Request | Response |
-| --- | --- | --- | --- |
-| `POST` | `/auth/register` | `{ "name", "email", "password" }` | `{ "token", "user": { "id", "name", "email", "role" } }` |
-| `POST` | `/auth/login` | `{ "email", "password" }` | same as register |
-| `GET` | `/auth/me` | | `{ "id", "name", "email", "role" }` |
-| `POST` | `/ask` | `{ "query", "chat_id"? }` | `{ "answer", "agent_used", "directive", "chat_id" }` |
-| `GET` | `/me/chats` | | `[{ "chat_id", "title", "updated_at" }]` |
-| `GET` | `/me/chats/{chat_id}` | | `{ "chat_id", "title", "messages" }` |
-| `GET` | `/me/persona` | | `{ "weak_topics", "mistake_patterns", "scores", "jds" }` |
-| `GET` | `/me/history` | | `{ "jds": [...], "tests": [{ "test_id", "score", "created_at" }] }` |
-| `POST` | `/jd/upload` | JSON `{ "text" }` or multipart `file` | `{ "jd_id" }` |
-| `GET` | `/jd/analyse/{jd_id}` | | `{ "skills", "roadmap" }` |
-| `POST` | `/test/generate` | `{ "jd_id" }` | `{ "jd_id", "questions" }` |
-| `POST` | `/run` | `{ "code", "language", "stdin"? }` | `{ "stdout", "stderr" }` |
-| `POST` | `/test/submit` | `{ "jd_id", "answers" }` | `{ "score", "weak_topics", "guidance" }` |
-| `GET` | `/class-tests` | student | published tests inside the window, plus any test this student already started. `?include_upcoming=1` adds future tests |
-| `POST` | `/class-tests/{id}/start` | | attempt, server deadline, questions without answers or hidden cases |
-| `PUT` | `/class-tests/{id}/answers` | `{ "answers" }` | autosave. After the deadline this is 409 and the attempt is closed |
-| `POST` | `/class-tests/{id}/focus` | | increments the tab-switch count on the open attempt |
-| `POST` | `/class-tests/{id}/run` | `{ "question_id", "code" }` | visible cases only |
-| `POST` | `/class-tests/{id}/submit` | `{ "answers"? }` | score. A late submit grades the saved answers |
-| `GET` `POST` | `/teacher/question-bank` | `kind`, `topic` / `{ "questions" }` | seeded bank plus saved questions. POST stores teacher-reviewed questions |
-| `POST` | `/teacher/question-bank/import` | `{ "text" }` or `{ "questions" }` | normalized MCQs, not stored |
-| `POST` | `/teacher/class-tests/generate` | `{ syllabus, difficulty, mcq_count, coding_count, language?, use_kb?, avoid? }` | editable drafts. Not stored. 503 when the Groq pool is busy before any question |
-| `GET` `POST` | `/teacher/class-tests` | test body | list, or create. `published: false` is a draft |
-| `GET` `PUT` `DELETE` | `/teacher/class-tests/{id}` | | read, edit, delete. Question edits and delete are 409 once attempts exist |
-| `POST` | `/teacher/class-tests/{id}/duplicate` | | unpublished copy |
-| `GET` | `/teacher/class-tests/{id}/attempts` | | scores, focus losses, per-question percent correct, and each answer |
-| `GET` | `/teacher/class-tests/{id}/attempts.csv` | | the same scores as CSV |
+`POST /auth/login` returns `{ "token", "user" }`. `POST /ask` accepts `{ "query", "chat_id"? }` and returns `{ "answer", "agent_used", "directive", "chat_id" }`. Omit `chat_id` to start a new chat. A recognized error type such as `NameError` is routed in code to the debug agent without an extra model call.
 
-`guidance` is `{ "directive", "message", "next_steps", "mistake_patterns" }`. `score` is 0 to 100. `answers` items are `{ "question_id", "selected" }` for an MCQ and `{ "question_id", "code", "language" }` for a coding question. A missing `chat_id` creates a chat. Another student's job description or chat is 404.
+Interactive docs are at http://localhost:8000/docs. Other student routes include `POST /jd/upload`, `GET /jd/analyse/{jd_id}`, `POST /test/generate`, `POST /run`, and `POST /test/submit`. Teacher routes are under `/teacher/*`.
 
-`POST /teacher/class-tests/generate` asks the shared Groq pool for draft MCQs and Python coding problems. It does not publish them and it does not write a test. Coding drafts are kept only when a reference solution passes the same sandbox the student harness uses; the solution itself is dropped. Calls are chunked (three MCQs, then one coding problem) so a rate limit returns the drafts already checked, or 503 when nothing was produced. `use_kb` optionally prepends a short Chroma excerpt. No new environment variable is required. The syllabus and the key are not logged.
+## Deployment
 
-Teacher routes. A student token receives 403.
+The documented **beginner path** is in [docs/DEPLOY_SIMPLE.md](docs/DEPLOY_SIMPLE.md):
 
-| Method | Path | Request | Response |
-| --- | --- | --- | --- |
-| `GET` | `/teacher/overview` | | `{ "total_students", "active_today", "avg_score", "directive_counts", "pending_kb" }` |
-| `GET` | `/teacher/students` | | `[{ "id", "name", "email", "disabled", "last_active", "avg_score", "weak_topics" }]` |
-| `GET` | `/teacher/students/{id}` | | `{ "user", "persona", "recent_activity", "tests" }` |
-| `GET` | `/teacher/students/{id}/chats` | | same shape as `/me/chats` |
-| `GET` | `/teacher/students/{id}/chats/{chat_id}` | | same shape as `/me/chats/{chat_id}` |
-| `PATCH` | `/teacher/students/{id}` | `{ "disabled" }` | student summary |
-| `POST` | `/teacher/students/{id}/reset` | | `{ "id", "reset": true }` |
-| `GET` | `/teacher/activity?limit=` | `limit` 1–200, default 50 | activity feed |
-| `GET` | `/teacher/kb` | filters `q`, `status`, `topic`, `tag`, `type`, `source`, `from`, `to`, `page`, `page_size` | `{ "items", "total", "page", "page_size", "counts", "facets" }` |
-| `POST` | `/teacher/kb` | `{ "title", "content", "topic", "tags", "difficulty", "source", "type", "approve"? }` | the item. `approve` defaults to true and writes Chroma |
-| `GET` | `/teacher/kb/pending` | | pending items |
-| `GET` | `/teacher/kb/{id}` | | the item |
-| `PUT` | `/teacher/kb/{id}` | any of `title`, `content`, `topic`, `tags`, `difficulty`, `source`, `type` | the edited item. Status does not change |
-| `DELETE` | `/teacher/kb/{id}` | | `{ "id", "deleted": true }`. Approved rows are removed from Chroma |
-| `POST` | `/teacher/kb/{id}/approve` | | approved item; this writes Chroma |
-| `POST` | `/teacher/kb/{id}/reject` | `{ "reason"? }` | rejected item |
-| `POST` | `/teacher/kb/bulk` | `{ "ids", "action", "reason"? }` | `{ "updated", "failed" }` |
-| `GET` | `/teacher/kb/uploads` | | upload records, newest first |
-| `POST` | `/teacher/kb/uploads` | multipart `file` | the upload record |
-| `POST` | `/teacher/kb/uploads/{id}/approve` | `{ "chunk_indexes"?, "title"?, "topic"?, "tags"?, "difficulty"? }` | `{ "upload", "item" }` |
-| `DELETE` | `/teacher/kb/uploads/{id}` | | `{ "id", "deleted": true }` |
+- Frontend: import the GitHub repo in Vercel, set Root Directory to `frontend`, set `VITE_API_URL` to the HTTPS API address (no trailing slash), and deploy. `frontend/vercel.json` rewrites unknown paths to `index.html`. Vite inlines `VITE_API_URL` at build time, so change the variable and redeploy if the API address changes.
+- API: one EC2 instance runs the production Docker image (`Dockerfile`) behind Caddy 2.11, which issues a certificate and proxies to the API container on port 8000. Port 8000 is not published to the internet. The image uses the CPU wheel of PyTorch, sets `CODELENS_LOW_MEMORY=1` and `WEB_CONCURRENCY=1`, and health-checks `GET /health`.
+- Database: a second EC2 instance runs `mongo:7.0`. Port 27017 is opened only to the API security group, not to the internet. SSH is limited to the operator's current IP.
 
-`directive_counts` is `{ "full", "hint", "gentle", "break" }`. `avg_score` on the overview is the mean of every submission, `0.0` when there are none. A student's `avg_score` is `null` when they have no submissions. `active_today` counts distinct students with any activity since UTC midnight.
+On the API instance, after a `git pull`, rebuild and restart with the setup script and `REBUILD=1` so the image is rebuilt. The script reuses the saved env file (JWT secret, Groq keys, MongoDB URI, CORS). It prints how many Groq keys it saved, not the values. Answers stay empty until `python -m rag_core.build_kb` has been run (the script can do that).
 
-`/approve-kb`, `/reject-kb`, `/pending-kb`, and `/sessions` are not registered.
+The documented **advanced path** is a three-server layout in a custom VPC: Nginx on a frontend instance, the API, and MongoDB on a private subnet. See [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md). An optional `workflow_dispatch` GitHub Actions workflow deploys that layout over SSM; it does not run on every push.
+
+## Observability
+
+There is no third-party APM or OpenTelemetry exporter in the repo. Timing is custom:
+
+- `rag_core/timing.py` — `log_latency(agent, **fields)` uses `perf_counter` and writes `agent=... latency_s=...` to the `codelens.agents` logger. The router and the agents use it (the router also records whether the small model was called).
+- `rag_core/profiler.py` — `Profiler.measure` times steps of `run_pipeline` when `profile=True`. The HTTP `POST /ask` handler does not turn this on; `test_profiler.py` does.
+- Request-level `response_time` is measured in `run_pipeline` and in the `POST /test/submit` handler, then stored through `session_logger.log_session`.
+- `GET /health` reports process liveness and MongoDB reachability, and is the Docker health check.
+
+## Team
+
+VTU final-year project, Department of Computer Science and Engineering, JSS Academy of Technical Education, Bengaluru.
+
+| Role | Name |
+| --- | --- |
+| Student | Raghava S Ayyaji |
+| Student | K Arjun |
+| Student | Nishith J Rao |
+| Student | Srishanth |
+| Project guide | Dr. Sharana Basavana Gowda |
+
+The React client in `frontend/` was built by K Arjun.
+
+## Roadmap
+
+- Add one small LangGraph tool-calling loop on top of the existing debug agent, retriever, and sandbox: retrieve KB context, diagnose, propose a fix, run tests, and retry with a tight bound (planned, not implemented yet).
+- A password-reset route does not exist yet.
+- Tracing today is log lines and optional profiler timings; a later step could map `log_latency` and `response_time` onto OpenTelemetry spans without changing agent behaviour.
 
 ## Layout
 
@@ -400,33 +274,22 @@ rag_core/schemas.py        Pydantic models
 rag_core/auth.py           bcrypt and JWT
 rag_core/mongo.py          Motor client and indexes
 rag_core/store.py          collection access
-rag_core/create_teacher.py teacher seed CLI
-rag_core/migrate_sqlite.py SQLite to MongoDB
-rag_core/llm.py            shared Groq clients and model ids
+rag_core/llm.py            Groq client pool and model ids
 rag_core/judgment.py       full / hint / gentle / break
 rag_core/pipeline.py       POST /ask
+rag_core/router.py         guidance router
 rag_core/kb_update.py      pending queue and the Chroma write
-rag_core/agents/           debug, concept, hint, web, JD, test, diagnosis, guide
+rag_core/timing.py         agent latency logs
+rag_core/profiler.py       optional pipeline step timer
+rag_core/agents/           JD, questions, evaluator, diagnoser, guide, concept, debug, hint, web, retrieval
 rag_core/sandbox/          subprocess runner
-knowledge_base/            notes used when a student is debugging
+rag_core/class_tests/      teacher-authored timed tests
+knowledge_base/            seed notes for the debugging index
+frontend/                  React / Vite client
 docker-compose.yml         MongoDB 7.0 on port 27017
-deploy/simple/             Vercel + two EC2 instances (beginner deploy)
-tests/                     auth, judgment, scoring, sandbox, schemas
+Dockerfile                 production API image
+deploy/simple/             Vercel + two EC2 instances, Caddy, REBUILD=1
+docs/DEPLOY_SIMPLE.md      beginner deploy
+docs/DEPLOY_AWS.md         three-server VPC deploy
+tests/                     auth, judgment, scoring, sandbox, schemas, deploy layout
 ```
-
-## AWS
-
-The beginner path puts the React app on Vercel and runs the API and MongoDB as two EC2 instances in the default Mumbai VPC. The console clicks and the two setup commands are in [docs/DEPLOY_SIMPLE.md](docs/DEPLOY_SIMPLE.md).
-
-A three-server layout in a custom VPC (Nginx, the API, and a private database) is the advanced option. That guide, the security-group table, and the teardown are in [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).
-
-## Team
-
-- Raghava S. Ayyaji
-- Arjun
-- Nishith J Rao
-- Srishant
-
-## Earlier evaluation
-
-RAGAS on the guidance answers, April 2026: answer relevancy 82.98%, faithfulness 47.29%. Those numbers are for the debugging knowledge base, not for the JD modules. An earlier guidance-chat deployment is at http://3.104.106.185/.
