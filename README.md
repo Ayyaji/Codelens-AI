@@ -9,6 +9,16 @@ VTU final-year project, JSS Academy of Technical Education, Bengaluru, 2026.
 **Live demo:** [codelens-ai-green.vercel.app](https://codelens-ai-green.vercel.app)  
 **Walkthrough:** [demo video](https://drive.google.com/file/d/1DapVEo4NcRaN6b_85SIq0d2oVGZ84Cvh/view) (anyone with the link can view)
 
+## Results
+
+Numbers below come from the repo history. They were measured on earlier versions of the pipeline, so treat them as rough benchmarks.
+
+| What | Result | Where it comes from |
+| --- | --- | --- |
+| Response time for one guidance query | 121 s → about 5 s, after moving inference from local Ollama to Groq | commit `2e07bff` on `feature/rag-core` |
+| Router accuracy | 20 / 25 test queries routed to the right agent (80%) | `evaluation/rag_vs_baseline.json` on `feature/evaluation` |
+| RAGAS vs a plain LLM (no RAG) | faithfulness 0.444 → 0.473, answer relevancy 0.815 → 0.830 | same file; evaluation run by Nishith J Rao |
+
 ## Architecture
 
 ```mermaid
@@ -258,7 +268,7 @@ VTU final-year project, Department of Computer Science and Engineering, JSS Acad
 | Student | Srishanth |
 | Project guide | Dr. Sharana Basavana Gowda |
 
-The React client in `frontend/` was built by K Arjun.
+The React client in `frontend/` was built by K Arjun. The RAGAS baseline and persona evaluations on `feature/evaluation` were run by Nishith J Rao. Raghava S Ayyaji worked on the backend RAG core: retrieval, the router and agents, the judgment layer, session logging, and the FastAPI API.
 
 ## Roadmap
 
